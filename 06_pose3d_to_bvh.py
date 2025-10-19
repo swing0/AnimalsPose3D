@@ -27,12 +27,13 @@ def generate_bvh_simple(npz_path):
     if 'positions_3d' in data.files:
         positions_3d_dict = data['positions_3d'].item()  # 使用.item()获取字典
 
-        # 选择第一个subject和action的数据进行测试
+        # 选择第一个subject和action的数据
         first_subject = list(positions_3d_dict.keys())[0]
         first_action = list(positions_3d_dict[first_subject].keys())[0]
 
         camera_keypoints_3d = positions_3d_dict[first_subject][first_action]
         print(f'>>> Using data from {first_subject}/{first_action}, shape: {camera_keypoints_3d.shape}')
+        print(f'>>> Total frames: {len(camera_keypoints_3d)}')
 
     else:
         # 如果不是标准格式，尝试直接加载关键点
@@ -81,14 +82,15 @@ def generate_bvh_simple(npz_path):
     skeleton.poses2bvh(world_keypoints_3d_h36m, output_file=save_path)
 
     print(f'>>> Successfully generated BVH file: {save_path}')
+    print(f'>>> Total frames in BVH: {len(world_keypoints_3d_h36m)}')
     return save_path
 
 
 if __name__ == '__main__':
     # 直接指定npz文件路径
     # npz_file = 'npz/real_npz/animals_keypoint.npz'
-    # npz_file = 'npz/real_npz/data_3d_animals.npz'
-    npz_file = 'npz/estimate_npz/data_3d_animals.npz'
+    npz_file = 'npz/real_npz/data_3d_animals.npz'
+    # npz_file = 'npz/estimate_npz/data_3d_animals.npz'
 
     try:
         bvh_path = generate_bvh_simple(npz_file)
@@ -96,5 +98,4 @@ if __name__ == '__main__':
     except Exception as e:
         print(f"错误: {e}")
         import traceback
-
         traceback.print_exc()

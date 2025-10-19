@@ -1,4 +1,3 @@
-# animals_dataset.py
 import numpy as np
 from common.skeleton import Skeleton
 from common.mocap_dataset import MocapDataset
@@ -52,7 +51,6 @@ class QuadrupedAnimalDataset(MocapDataset):
         # Setup virtual cameras
         self._setup_virtual_cameras()
 
-        # Reorganize data to H36M-like structure
         self._data = self._reorganize_data(keypoints_3d)
 
         if remove_static_joints:
@@ -133,29 +131,19 @@ class QuadrupedAnimalDataset(MocapDataset):
         return np.array([x, y, z], dtype='float32')
 
     def _reorganize_data(self, keypoints_3d):
-        """Reorganize data to H36M-like format"""
+        """Reorganize data to H36M-like format - 不分割数据，使用完整序列"""
         data = {}
         subject = 'Animal'
         data[subject] = {}
 
-        # Split data into action segments
-        seq_length = len(keypoints_3d)
-        chunk_size = min(1000, seq_length)  # 动态调整块大小
+        # 使用完整序列作为一个action，不进行分割
+        action_name = 'complete_sequence'
+        data[subject][action_name] = {
+            'positions': keypoints_3d,
+            'cameras': self._cameras[subject]
+        }
 
-        action_count = 0
-        for start_idx in range(0, seq_length, chunk_size):
-            end_idx = min(start_idx + chunk_size, seq_length)
-            if end_idx - start_idx < 10:  # Skip very short sequences
-                continue
-
-            action_name = f'action_{action_count:02d}'
-            data[subject][action_name] = {
-                'positions': keypoints_3d[start_idx:end_idx],
-                'cameras': self._cameras[subject]
-            }
-            action_count += 1
-
-        print(f"Created {action_count} actions from {seq_length} frames")
+        print(f"Created complete sequence with {len(keypoints_3d)} frames")
         return data
 
     def supports_semi_supervised(self):

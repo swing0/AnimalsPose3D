@@ -455,8 +455,8 @@ if not args.render and test_generator:
 
 print('Done!')
 
-# python run_animals.py -d animals -k gt -str Animal -ste Animal --architecture 3,3,3 -e 200 -b 256 --channels 512 --dropout 0.2 --learning-rate 0.001 --downsample 4 --subset 0.5 --checkpoint checkpoint
-# python run_animals.py -d animals -k gt -str Animal -ste Animal --architecture 3,3,3,3 -e 100 -b 256 --channels 512 --dropout 0.2 --learning-rate 0.001 --downsample 4 --subset 0.5 --checkpoint checkpoint
+# python 03_run_animals.py -d animals -k gt -str Animal -ste Animal --architecture 3,3,3 -e 200 -b 256 --channels 512 --dropout 0.2 --learning-rate 0.001 --downsample 4 --subset 0.5 --checkpoint checkpoint
+# python 03_run_animals.py -d animals -k gt -str Animal -ste Animal --architecture 3,3,3,3 -e 100 -b 256 --channels 512 --dropout 0.2 --learning-rate 0.001 --downsample 4 --subset 0.5 --checkpoint checkpoint
 
 
-# python run_animals.py -d animals -k gt --evaluate epoch_60.bin
+# python 03_run_animals.py -d animals -k gt --evaluate epoch_60.bin
