@@ -1,0 +1,11 @@
+bvh:
+  # transfer from camera space -> world space
+  camera:
+    extrinsics:
+      # Rotation in quaternions format
+#      R: [ 0.14070565, -0.15007018, -0.7552408, 0.62232804 ]
+      R: [ 0, 0, 0, 0 ]
+      # translation in matrix
+      T: [ 0,0,0 ] #[ 1841.1070556640625, 4955.28466796875, 1563.4454345703125 ]
+
+  scale_factor: 100
