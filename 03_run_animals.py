@@ -1,17 +1,15 @@
-# run_animals.py
+# 03_run_animals.py
 # Copyright (c) 2018-present, Facebook, Inc.
 # All rights reserved.
 # Adapted for quadruped animals
 
-import numpy as np
-import torch
-import torch.nn as nn
 import torch.optim as optim
 import os
 import sys
 import errno
 from time import time
 
+from common.animals_dataset import AnimalsDataset
 from common.arguments import parse_args
 from common.camera import *
 from common.model import *
@@ -20,7 +18,6 @@ from common.generators import ChunkedGenerator, UnchunkedGenerator
 from common.utils import deterministic_random
 
 # 导入动物数据集
-from common.animals_dataset import QuadrupedAnimalDataset
 
 args = parse_args()
 print(args)
@@ -35,7 +32,7 @@ print('Loading dataset...')
 dataset_path = 'npz/real_npz/data_3d_' + args.dataset + '.npz'
 
 if args.dataset == 'animals':
-    dataset = QuadrupedAnimalDataset(dataset_path)
+    dataset = AnimalsDataset(dataset_path)
 else:
     raise KeyError('Invalid dataset')
 

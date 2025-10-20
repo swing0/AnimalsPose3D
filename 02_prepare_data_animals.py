@@ -1,3 +1,4 @@
+# 02_prepare_data_animals.py
 import argparse
 import os
 import numpy as np

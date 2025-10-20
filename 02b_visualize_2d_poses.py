@@ -1,4 +1,4 @@
-# visualize_2d_poses_accurate.py
+# 02b_visualize_2d_poses.py
 import numpy as np
 import matplotlib.pyplot as plt
 import cv2
