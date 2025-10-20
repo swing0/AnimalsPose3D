@@ -17,7 +17,7 @@ animal_cameras_intrinsic_params = [
     {
         'id': 'camera_01_front_right',
         'center': [960.0, 540.0],  # 1920x1080分辨率
-        'focal_length': [800.0, 800.0],  # 较短焦距适应大尺度数据
+        'focal_length': [1145.0, 1145.0],  # 较短焦距适应大尺度数据
         'radial_distortion': [-0.15, 0.20, 0.001],
         'tangential_distortion': [0.001, -0.001],
         'res_w': 1920,
@@ -27,7 +27,7 @@ animal_cameras_intrinsic_params = [
     {
         'id': 'camera_02_front_left',
         'center': [960.0, 540.0],
-        'focal_length': [800.0, 800.0],
+        'focal_length': [1145.0, 1145.0],
         'radial_distortion': [-0.12, 0.18, 0.001],
         'tangential_distortion': [-0.001, 0.001],
         'res_w': 1920,
@@ -37,7 +37,7 @@ animal_cameras_intrinsic_params = [
     {
         'id': 'camera_03_rear_right',
         'center': [960.0, 540.0],
-        'focal_length': [850.0, 850.0],
+        'focal_length': [1145.0, 1145.0],
         'radial_distortion': [-0.18, 0.22, 0.001],
         'tangential_distortion': [0.001, 0.001],
         'res_w': 1920,
@@ -47,7 +47,7 @@ animal_cameras_intrinsic_params = [
     {
         'id': 'camera_04_rear_left',
         'center': [960.0, 540.0],
-        'focal_length': [850.0, 850.0],
+        'focal_length': [1145.0, 1145.0],
         'radial_distortion': [-0.16, 0.19, 0.001],
         'tangential_distortion': [-0.001, -0.001],
         'res_w': 1920,
