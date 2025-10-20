@@ -4,13 +4,58 @@ import os
 import numpy as np
 import sys
 
-
 # 添加common模块路径
 sys.path.append('../')
 
 from common.animals_dataset import AnimalsDataset
-from common.camera import world_to_camera, project_to_2d, image_coordinates
-from common.utils import wrap
+
+
+def simple_orthographic_project(positions_3d, view_angle='front'):
+    """
+    简单的正交投影到2D
+    view_angle: 'front', 'side', 'top', 'oblique'
+    """
+    if view_angle == 'front':
+        # 前视图: 移除Z轴，只保留X,Y
+        return positions_3d[..., :2].copy()
+    elif view_angle == 'side':
+        # 侧视图: 移除X轴，Z,Y (注意调整坐标顺序)
+        return positions_3d[..., [2, 1]].copy()
+    elif view_angle == 'top':
+        # 顶视图: 移除Y轴，X,Z
+        return positions_3d[..., [0, 2]].copy()
+    elif view_angle == 'oblique':
+        # 斜前视图: 简单的轴测投影
+        x = positions_3d[..., 0]
+        y = positions_3d[..., 1]
+        z = positions_3d[..., 2]
+        # 简单的45度斜投影
+        u = x - z * 0.35
+        v = y - z * 0.35
+        return np.stack([u, v], axis=-1)
+    else:
+        raise ValueError(f"Unknown view angle: {view_angle}")
+
+
+def normalize_2d_positions(positions_2d):
+    """
+    归一化2D坐标到 [-1, 1] 范围
+    """
+    # 找到所有帧的边界
+    all_positions = positions_2d.reshape(-1, 2)
+    min_val = all_positions.min(axis=0)
+    max_val = all_positions.max(axis=0)
+
+    # 计算中心点和范围
+    center = (min_val + max_val) / 2
+    scale = np.max(max_val - min_val)
+
+    if scale == 0:
+        scale = 1.0
+
+    # 归一化到 [-1, 1]
+    normalized = (positions_2d - center) / (scale / 2)
+    return normalized
 
 
 def main():
@@ -33,12 +78,16 @@ def main():
     print(f"输出文件: {output_2d}")
 
     # 创建2D姿态文件
-    print('计算地面真实的2D姿态...')
+    print('使用简单投影生成2D姿态...')
 
     try:
         # 加载动物数据集
         dataset = AnimalsDataset(input_npz)
         output_2d_poses = {}
+
+        # 定义四个简单的视角
+        view_angles = ['front', 'side', 'oblique', 'top']
+        view_names = ['前视图', '侧视图', '斜视图', '顶视图']
 
         for subject in dataset.subjects():
             output_2d_poses[subject] = {}
@@ -46,25 +95,36 @@ def main():
 
             for action in dataset[subject].keys():
                 anim = dataset[subject][action]
+                positions_3d = anim['positions']
 
-                positions_2d = []
-                for cam in anim['cameras']:
-                    # 3D世界坐标 -> 相机坐标
-                    pos_3d = world_to_camera(
-                        anim['positions'],
-                        R=cam['orientation'],
-                        t=cam['translation']
-                    )
-                    # 相机坐标 -> 2D投影
-                    pos_2d = wrap(project_to_2d, pos_3d, cam['intrinsic'], unsqueeze=True)
-                    # 2D归一化坐标 -> 像素坐标
-                    pos_2d_pixel_space = image_coordinates(
-                        pos_2d, w=cam['res_w'], h=cam['res_h']
-                    )
-                    positions_2d.append(pos_2d_pixel_space.astype('float32'))
+                print(f"  动作 {action} 的3D数据形状: {positions_3d.shape}")
+                print(f"  3D数据范围 - X: [{positions_3d[..., 0].min():.2f}, {positions_3d[..., 0].max():.2f}]")
+                print(f"            Y: [{positions_3d[..., 1].min():.2f}, {positions_3d[..., 1].max():.2f}]")
+                print(f"            Z: [{positions_3d[..., 2].min():.2f}, {positions_3d[..., 2].max():.2f}]")
 
-                output_2d_poses[subject][action] = positions_2d
-                print(f"  动作 {action}: {anim['positions'].shape} -> {len(positions_2d)} 个相机视角")
+                positions_2d_all_views = []
+
+                for i, (view_angle, view_name) in enumerate(zip(view_angles, view_names)):
+                    print(f"    生成 {view_name} 投影...")
+
+                    # 简单的正交投影
+                    positions_2d = simple_orthographic_project(positions_3d, view_angle)
+
+                    print(f"      原始2D范围 - u: [{positions_2d[..., 0].min():.2f}, {positions_2d[..., 0].max():.2f}]")
+                    print(f"                 v: [{positions_2d[..., 1].min():.2f}, {positions_2d[..., 1].max():.2f}]")
+
+                    # 归一化到 [-1, 1] 范围
+                    positions_2d_normalized = normalize_2d_positions(positions_2d)
+
+                    print(
+                        f"      归一化2D范围 - u: [{positions_2d_normalized[..., 0].min():.2f}, {positions_2d_normalized[..., 0].max():.2f}]")
+                    print(
+                        f"                   v: [{positions_2d_normalized[..., 1].min():.2f}, {positions_2d_normalized[..., 1].max():.2f}]")
+
+                    positions_2d_all_views.append(positions_2d_normalized.astype('float32'))
+
+                output_2d_poses[subject][action] = positions_2d_all_views
+                print(f"  动作 {action}: 生成 {len(positions_2d_all_views)} 个视角")
 
         # 保存元数据
         metadata = {
@@ -80,7 +140,10 @@ def main():
                 "Right Shoulder", "Right Elbow", "Right Front Paw",
                 "Left Hip", "Left Knee", "Left Back Paw",
                 "Right Hip", "Right Knee", "Right Back Paw"
-            ]
+            ],
+            'view_angles': view_angles,
+            'view_names': view_names,
+            'projection_type': 'simple_orthographic'
         }
 
         # 保存2D姿态数据
@@ -96,12 +159,12 @@ def main():
         print(f"保存的动物数量: {len(positions_2d_loaded)}")
         for subject, actions in positions_2d_loaded.items():
             print(f"  {subject}: {len(actions)} 个动作")
-            for action, cams in actions.items():
-                print(f"    {action}: {len(cams)} 个相机视角, 形状: {cams[0].shape if len(cams) > 0 else 'N/A'}")
+            for action, views in actions.items():
+                print(f"    {action}: {len(views)} 个视角, 形状: {views[0].shape if len(views) > 0 else 'N/A'}")
 
         print(f"关节数量: {metadata_loaded['num_joints']}")
-        print(f"左关节: {metadata_loaded['keypoints_symmetry'][0]}")
-        print(f"右关节: {metadata_loaded['keypoints_symmetry'][1]}")
+        print(f"投影类型: {metadata_loaded['projection_type']}")
+        print(f"视角: {metadata_loaded['view_angles']}")
 
         print('完成!')
 

@@ -1,4 +1,4 @@
-# 06_pose3d_to_bvh.py
+# 05_pose3d_to_bvh.py
 import os
 import os.path as osp
 import sys
@@ -93,8 +93,8 @@ def generate_bvh_simple(npz_path):
 if __name__ == '__main__':
     # 直接指定npz文件路径
     # npz_file = 'npz/real_npz/animals_keypoint.npz'
-    npz_file = 'npz/real_npz/data_3d_animals.npz'
-    # npz_file = 'npz/estimate_npz/data_3d_animals.npz'
+    # npz_file = 'npz/real_npz/data_3d_animals.npz'
+    npz_file = 'npz/estimate_npz/data_3d_estimated.npz'
 
     try:
         bvh_path = generate_bvh_simple(npz_file)

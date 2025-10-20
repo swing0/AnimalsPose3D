@@ -1,21 +1,39 @@
 # common/arguments.py
-# Copyright (c) 2018-present, Facebook, Inc.
-# All rights reserved.
-# Adapted for quadruped animals
-
 import argparse
+import numpy as np
+import os
+
+
+def get_all_subjects(dataset_path):
+    """自动获取数据集中的所有动物主体"""
+    try:
+        if os.path.exists(dataset_path):
+            dataset = np.load(dataset_path, allow_pickle=True)
+            data = dataset['positions_3d'].item() if 'positions_3d' in dataset else dataset.item()
+            subjects = list(data.keys())
+            return subjects
+    except:
+        pass
+    return ['Animal']  # 默认值
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Training script for quadruped animal pose estimation')
 
+    # 首先获取数据集路径以确定默认主体
+    dataset_path = 'npz/real_npz/data_3d_animals.npz'
+    all_subjects = get_all_subjects(dataset_path)
+    all_subjects_str = ",".join(all_subjects)
+
     # General arguments
     parser.add_argument('-d', '--dataset', default='animals', type=str, metavar='NAME', help='target dataset')
     parser.add_argument('-k', '--keypoints', default='gt', type=str, metavar='NAME', help='2D detections to use')
-    parser.add_argument('-str', '--subjects-train', default='Animal', type=str, metavar='LIST',
-                        help='training subjects separated by comma')
-    parser.add_argument('-ste', '--subjects-test', default='Animal', type=str, metavar='LIST',
-                        help='test subjects separated by comma')
+
+    # 修改默认值为所有动物
+    parser.add_argument('-str', '--subjects-train', default=all_subjects_str, type=str, metavar='LIST',
+                        help='training subjects separated by comma (default: all subjects)')
+    parser.add_argument('-ste', '--subjects-test', default=all_subjects_str, type=str, metavar='LIST',
+                        help='test subjects separated by comma (default: all subjects)')
     parser.add_argument('-sun', '--subjects-unlabeled', default='', type=str, metavar='LIST',
                         help='unlabeled subjects separated by comma for self-supervision')
     parser.add_argument('-a', '--actions', default='*', type=str, metavar='LIST',
@@ -93,6 +111,10 @@ def parse_args():
     parser.set_defaults(test_time_augmentation=True)
 
     args = parser.parse_args()
+
+    # 打印检测到的主体信息
+    if args.subjects_train == all_subjects_str:
+        print(f"📊 自动检测到 {len(all_subjects)} 个动物主体: {', '.join(all_subjects)}")
 
     # Check invalid configuration
     if args.resume and args.evaluate:
