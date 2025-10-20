@@ -18,33 +18,7 @@ class QuadrupedAnimalDataset(MocapDataset):
         # Load NPZ data - 适配新的数据格式
         data = np.load(npz_path, allow_pickle=True)
 
-        # 检查数据格式并加载关键点
-        if 'positions_3d' in data:
-            # 这是从 prepare_data_animals.py 生成的格式
-            positions_3d_dict = data['positions_3d'].item()
-            # 提取所有关键点数据
-            all_keypoints = []
-            for subject in positions_3d_dict.keys():
-                for action in positions_3d_dict[subject].keys():
-                    keypoints = positions_3d_dict[subject][action]
-                    all_keypoints.append(keypoints)
-
-            if all_keypoints:
-                keypoints_3d = np.concatenate(all_keypoints, axis=0)
-            else:
-                raise ValueError("No 3D position data found in the file")
-        elif 'keypoints' in data:
-            # 这是原始的关键点格式
-            keypoints_3d = data['keypoints']
-        else:
-            # 尝试找到任何3D数据
-            for key in data.files:
-                array = data[key]
-                if hasattr(array, 'shape') and array.ndim == 3 and array.shape[-1] == 3:
-                    keypoints_3d = array
-                    break
-            else:
-                raise ValueError(f"Could not find 3D keypoint data in {npz_path}. Available keys: {list(data.files)}")
+        keypoints_3d = data['keypoints']
 
         print(f"Loaded keypoints with shape: {keypoints_3d.shape}")
 
@@ -131,7 +105,6 @@ class QuadrupedAnimalDataset(MocapDataset):
         return np.array([x, y, z], dtype='float32')
 
     def _reorganize_data(self, keypoints_3d):
-        """Reorganize data to H36M-like format - 不分割数据，使用完整序列"""
         data = {}
         subject = 'Animal'
         data[subject] = {}
