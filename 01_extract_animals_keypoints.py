@@ -69,6 +69,8 @@ def extract_animal_name(zip_name):
         return zip_name.replace('.ovl.zip', '')
     elif '.zip' in zip_name:
         return zip_name.replace('.zip', '')
+    elif '.ovl' in zip_name:
+        return zip_name.replace('.ovl', '')
     else:
         return zip_name
 
