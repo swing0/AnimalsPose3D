@@ -244,102 +244,9 @@ def visualize_2d_poses_accurate(npz_path, output_dir="visualization/2d_poses_acc
                         show=False
                     )
 
-    # 创建汇总信息
-    create_summary_report(positions_2d, output_dir)
-
     print(f"\n🎉 所有可视化完成! 输出目录: {output_dir}")
 
 
-def create_summary_report(positions_2d, output_dir):
-    """创建汇总报告"""
-    summary_path = os.path.join(output_dir, "visualization_summary.txt")
-
-    with open(summary_path, 'w', encoding='utf-8') as f:
-        f.write("2D姿态可视化汇总报告\n")
-        f.write("=" * 60 + "\n\n")
-
-        f.write("关键点映射信息:\n")
-        f.write("-" * 40 + "\n")
-
-        mapper = KeypointMapper()
-        for ap10k_name, training_name in mapper.ap10k_to_training.items():
-            ap10k_idx = mapper.ap10k_mapping[ap10k_name]
-            training_idx = mapper.training_keypoints_order.index(training_name)
-            f.write(f"AP10K: {ap10k_name:<15} ({ap10k_idx:2d}) -> ")
-            f.write(f"训练: {training_name:<15} ({training_idx:2d})\n")
-
-        f.write("\n数据统计:\n")
-        f.write("-" * 40 + "\n")
-        f.write(f"总主体数: {len(positions_2d)}\n")
-
-        for subject, actions in positions_2d.items():
-            f.write(f"\n主体: {subject}\n")
-            for action, camera_views in actions.items():
-                f.write(f"  动作: {action}\n")
-                for cam_idx, poses in enumerate(camera_views):
-                    f.write(f"    相机 {cam_idx}: {poses.shape} 帧\n")
-
-    print(f"📝 汇总报告已保存: {summary_path}")
-
-
-def interactive_pose_explorer(npz_path):
-    """
-    交互式姿态浏览器
-    """
-    data = np.load(npz_path, allow_pickle=True)
-    positions_2d = data['positions_2d'].item()
-
-    visualizer = PoseVisualizer()
-
-    # 选择第一个主体和动作
-    subject = list(positions_2d.keys())[0]
-    action = list(positions_2d[subject].keys())[0]
-    camera_views = positions_2d[subject][action]
-
-    print(f"🔍 交互式姿态浏览器: {subject}/{action}")
-    print("控制命令:")
-    print("  'n' - 下一帧")
-    print("  'p' - 上一帧")
-    print("  'c' - 切换相机")
-    print("  'q' - 退出")
-
-    cam_idx = 0
-    frame_idx = 0
-    poses = camera_views[cam_idx]
-
-    while True:
-        canvas = visualizer.create_canvas()
-        keypoints = poses[frame_idx]
-        visualizer.draw_pose(canvas, keypoints)
-
-        # 显示信息
-        info_text = [
-            f"Subject: {subject}",
-            f"Action: {action}",
-            f"Camera: {cam_idx}/{len(camera_views) - 1}",
-            f"Frame: {frame_idx}/{len(poses) - 1}",
-            "Press 'n': next, 'p': previous, 'c': camera, 'q': quit"
-        ]
-
-        for i, text in enumerate(info_text):
-            cv2.putText(canvas, text, (20, 30 + i * 25),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
-
-        cv2.imshow("2D Pose Explorer", canvas)
-
-        key = cv2.waitKey(0) & 0xFF
-        if key == ord('n'):  # 下一帧
-            frame_idx = min(frame_idx + 1, len(poses) - 1)
-        elif key == ord('p'):  # 上一帧
-            frame_idx = max(frame_idx - 1, 0)
-        elif key == ord('c'):  # 切换相机
-            cam_idx = (cam_idx + 1) % len(camera_views)
-            poses = camera_views[cam_idx]
-            frame_idx = 0
-        elif key == ord('q'):  # 退出
-            break
-
-    cv2.destroyAllWindows()
 
 
 if __name__ == "__main__":
@@ -352,11 +259,8 @@ if __name__ == "__main__":
         mapper = KeypointMapper()
         mapper.print_mapping_info()
 
-        # 方法1: 生成静态图像可视化
         visualize_2d_poses_accurate(NPZ_PATH)
 
-        # 方法2: 交互式浏览器（取消注释以使用）
-        # interactive_pose_explorer(NPZ_PATH)
 
         print("\n🎊 可视化任务完成!")
     else:

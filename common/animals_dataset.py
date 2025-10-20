@@ -73,10 +73,10 @@ class QuadrupedAnimalDataset(MocapDataset):
 
         # 4 virtual camera positions
         camera_configs = [
-            {'azimuth': 45, 'distance': 3.0, 'elevation': 0.1},
-            {'azimuth': -45, 'distance': 3.0, 'elevation': 0.1},
-            {'azimuth': 135, 'distance': 3.0, 'elevation': 0.1},
-            {'azimuth': -135, 'distance': 3.0, 'elevation': 0.1},
+            {'azimuth': 70, 'distance': 1.0, 'elevation': 0.1},
+            {'azimuth': -70, 'distance': 1.0, 'elevation': 0.1},
+            {'azimuth': 110, 'distance': 1.0, 'elevation': 0.1},
+            {'azimuth': -110, 'distance': 1.0, 'elevation': 0.1},
         ]
 
         subject = 'Animal'
