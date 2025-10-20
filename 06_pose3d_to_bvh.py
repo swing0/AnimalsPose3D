@@ -11,6 +11,10 @@ from common.config import get_config
 # 添加必要的路径
 sys.path.append(osp.join(osp.abspath(osp.dirname(__file__))))
 
+# 选择相应的subject(动物)和action(动作)的数据
+subject_num = 0
+action_num = 0
+
 
 def generate_bvh_simple(npz_path):
     """
@@ -27,9 +31,9 @@ def generate_bvh_simple(npz_path):
     if 'positions_3d' in data.files:
         positions_3d_dict = data['positions_3d'].item()  # 使用.item()获取字典
 
-        # 选择第一个subject和action的数据
-        first_subject = list(positions_3d_dict.keys())[0]
-        first_action = list(positions_3d_dict[first_subject].keys())[0]
+        # 选择相应的subject和action的数据
+        first_subject = list(positions_3d_dict.keys())[subject_num]
+        first_action = list(positions_3d_dict[first_subject].keys())[action_num]
 
         camera_keypoints_3d = positions_3d_dict[first_subject][first_action]
         print(f'>>> Using data from {first_subject}/{first_action}, shape: {camera_keypoints_3d.shape}')

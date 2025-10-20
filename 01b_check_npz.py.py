@@ -210,17 +210,7 @@ def check_sample_data(positions_3d, num_samples=3):
 
 def main():
     # 设置NPZ文件路径
-    npz_file_path = r"npz\real_npz\animals_keypoint.npz"
-
-    # 如果文件不存在，尝试在当前位置查找
-    if not os.path.exists(npz_file_path):
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        npz_file_path = os.path.join(current_dir, "animals_keypoint.npz")
-
-        if not os.path.exists(npz_file_path):
-            # 尝试在npz/real_npz目录下查找
-            npz_file_path = os.path.join(current_dir, "npz", "real_npz", "animals_keypoint.npz")
-
+    npz_file_path = r"npz\real_npz\data_3d_animals.npz"
     check_npz_structure(npz_file_path)
 
 

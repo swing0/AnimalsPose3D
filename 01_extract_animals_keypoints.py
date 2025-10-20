@@ -232,7 +232,7 @@ def main():
 
     # 保存为NPZ文件
     if positions_3d:
-        output_npz = os.path.join(output_dir, "animals_keypoint.npz")
+        output_npz = os.path.join(output_dir, "data_3d_animals.npz")
 
         # 创建最终的字典结构
         npz_data = {
