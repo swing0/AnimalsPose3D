@@ -6,26 +6,26 @@ import glob
 import numpy as np
 from pathlib import Path
 
-# 关键点映射关系
 KEYPOINT_MAPPING = {
     "Root of Tail": ["def_c_tail1_joint"],
     "Left Eye": ["def_eye_joint.L"],
     "Right Eye": ["def_eye_joint.R"],
     "Nose": ["def_c_nose_joint"],
     "Neck": ["def_c_neck1_joint", "def_c_neck2_joint"],
-    "Left Shoulder": ["def_clavicle_joint.L"],
-    "Left Elbow": ["def_frontLegLwr_joint.L"],
+    "Left Shoulder": ["def_frontLegLwr_joint.L"],
+    "Left Elbow": ["def_frontHorselink_joint.L"],
     "Left Front Paw": ["def_frontFoot_joint.L"],
-    "Right Shoulder": ["def_clavicle_joint.R"],
-    "Right Elbow": ["def_frontLegLwr_joint.R"],
+    "Right Shoulder": ["def_frontLegLwr_joint.R"],
+    "Right Elbow": ["def_frontHorselink_joint.R"],
     "Right Front Paw": ["def_frontFoot_joint.R"],
-    "Left Hip": ["def_rearLegUpr_joint.L"],
-    "Left Knee": ["def_rearLegLwr_joint.L"],
+    "Left Hip": ["def_rearLegLwr_joint.L"],
+    "Left Knee": ["def_rearHorselink_joint.L"],
     "Left Back Paw": ["def_rearFoot_joint.L"],
-    "Right Hip": ["def_rearLegUpr_joint.R"],
-    "Right Knee": ["def_rearLegLwr_joint.R"],
+    "Right Hip": ["def_rearLegLwr_joint.R"],
+    "Right Knee": ["def_rearHorselink_joint.R"],
     "Right Back Paw": ["def_rearFoot_joint.R"]
 }
+
 
 KEYPOINT_ORDER = list(KEYPOINT_MAPPING.keys())
 
@@ -161,10 +161,7 @@ def process_zip_file(zip_path):
 
                     if animation_name and len(np_data) >= MIN_FRAMES:
                         if animation_name in animations_data:
-                            # 如果动画名称已存在，合并数据
-                            existing_data = animations_data[animation_name]
-                            animations_data[animation_name] = np.concatenate([existing_data, np_data], axis=0)
-                            print(f"  合并动画 {animation_name}: 新增 {len(np_data)} 帧")
+                            print(f"  跳过动画 {animation_name}: 已存在，不重复保留")
                         else:
                             animations_data[animation_name] = np_data
                             print(f"  保留动画 {animation_name}: {len(np_data)} 有效帧")
