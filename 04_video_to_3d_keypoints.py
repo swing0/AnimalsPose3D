@@ -390,9 +390,9 @@ class VideoTo3DKeypoints:
 def main():
     """主函数 - 使用示例"""
     # 配置路径
-    MODEL_CHECKPOINT = "checkpoint_all_animals/epoch_010.bin"
+    MODEL_CHECKPOINT = "checkpoint_all_animals/epoch_050.bin"
     ONNX_MODEL_PATH = "model/ap10k/end2end.onnx"
-    VIDEO_PATH = "video/test_video.mp4"
+    VIDEO_PATH = "video/test_video_yang.mp4"
 
     # 检查文件是否存在
     if not os.path.exists(MODEL_CHECKPOINT):

@@ -1,13 +1,14 @@
+import numpy as np
 from . import math3d
 from . import bvh_helper
 
-import numpy as np
-
 
 class AnimalSkeleton(object):
-
     def __init__(self):
+        # 根节点定义
         self.root = 'Hip'
+
+        # 关节名称到原始数据索引的映射
         self.keypoint2index = {
             'Hip': 0,
             'RightHip': 14,
@@ -16,8 +17,12 @@ class AnimalSkeleton(object):
             'LeftHip': 11,
             'LeftKnee': 12,
             'LeftAnkle': 13,
-            'Spine': 17,  # 使用虚拟索引，不在原始数据中
-            'Thorax': 18,  # 使用虚拟索引，不在原始数据中
+            'Spine': 17,  # 虚拟索引
+            'Thorax': 18,  # 虚拟索引
+            'RightHipTop': 19,  # 虚拟索引
+            'LeftHipTop': 20,  # 虚拟索引
+            'LeftShoulderTop': 21,  # 虚拟索引
+            'RightShoulderTop': 22,  # 虚拟索引
             'Neck': 4,
             'Nose': 3,
             'LeftShoulder': 5,
@@ -30,122 +35,117 @@ class AnimalSkeleton(object):
         self.index2keypoint = {v: k for k, v in self.keypoint2index.items()}
         self.keypoint_num = len(self.keypoint2index)
 
+        # 骨骼层级关系
         self.children = {
-            'Hip': ['RightHip', 'LeftHip', 'Spine'],
+            'Hip': ['RightHipTop', 'LeftHipTop', 'Spine'],
+            'RightHipTop': ['RightHip'],
             'RightHip': ['RightKnee'],
             'RightKnee': ['RightAnkle'],
-            'RightAnkle': [],  # 移除了EndSite子节点
+            'RightAnkle': [],
+            'LeftHipTop': ['LeftHip'],
             'LeftHip': ['LeftKnee'],
             'LeftKnee': ['LeftAnkle'],
-            'LeftAnkle': [],  # 移除了EndSite子节点
+            'LeftAnkle': [],
             'Spine': ['Thorax'],
-            'Thorax': ['Neck', 'LeftShoulder', 'RightShoulder'],
+            'Thorax': ['Neck', 'LeftShoulderTop', 'RightShoulderTop'],
             'Neck': ['Nose'],
-            'Nose': [],  # Head is an end site
+            'Nose': [],
+            'LeftShoulderTop': ['LeftShoulder'],
             'LeftShoulder': ['LeftElbow'],
             'LeftElbow': ['LeftWrist'],
-            'LeftWrist': [],  # 移除了EndSite子节点
+            'LeftWrist': [],
+            'RightShoulderTop': ['RightShoulder'],
             'RightShoulder': ['RightElbow'],
             'RightElbow': ['RightWrist'],
-            'RightWrist': []  # 移除了EndSite子节点
+            'RightWrist': []
         }
+
+        # 自动生成父节点字典
         self.parent = {self.root: None}
         for parent, children in self.children.items():
             for child in children:
                 self.parent[child] = parent
 
-        self.left_joints = [
-            joint for joint in self.keypoint2index
-            if 'Left' in joint
-        ]
-        self.right_joints = [
-            joint for joint in self.keypoint2index
-            if 'Right' in joint
-        ]
-
-        # Animal-pose
+        # 这里的方向决定了 BVH 的静态姿态
         self.initial_directions = {
-            'Hip': [0, 0, 0],
-            'RightHip': [-1, 0, 0],
-            'RightKnee': [0, 0, -1],
-            'RightAnkle': [0, 0, -1],
-            'LeftHip': [1, 0, 0],
-            'LeftKnee': [0, 0, -1],
-            'LeftAnkle': [0, 0, -1],
-            'Spine': [0, 0, 1],
-            'Thorax': [0, 0, 1],
-            'Neck': [0, 0, 1],
-            'Nose': [0, 0, 1],
-            'LeftShoulder': [1, 0, 0],
-            'LeftElbow': [1, 0, 0],
-            'LeftWrist': [1, 0, 0],
-            'RightShoulder': [-1, 0, 0],
-            'RightElbow': [-1, 0, 0],
-            'RightWrist': [-1, 0, 0]
+           'Hip': [0, 0, 0],
+           'Spine': [0, 0, 1],  # 脊椎向正前方延伸
+           'Thorax': [0, 0, 1],
+           'Neck': [0, 0.5, 0.5],  # 脖子斜向上
+           'Nose': [0, 0, 1],
+           'RightHipTop': [1, 0, 0],  # 向右偏置
+           'RightHip': [0, -1, 0],  # 腿向下
+           'RightKnee': [0, -1, 0],
+           'RightAnkle': [0, -1, 0],
+           'LeftHipTop': [-1, 0, 0],
+           'LeftHip': [0, -1, 0],
+           'LeftKnee': [0, -1, 0],
+           'LeftAnkle': [0, -1, 0],
+           'RightShoulderTop': [1, 0, 0],
+           'RightShoulder': [0, -1, 0],
+           'RightElbow': [0, -1, 0],
+           'RightWrist': [0, -1, 0],
+           'LeftShoulderTop': [-1, 0, 0],
+           'LeftShoulder': [0, -1, 0],
+           'LeftElbow': [0, -1, 0],
+           'LeftWrist': [0, -1, 0],
         }
 
+
     def get_estimated_position(self, pose, joint_name):
-        """根据Hip和Neck的位置估计Spine或Thorax的位置"""
+        """根据基础关键点计算虚拟/辅助关节点位置"""
         hip_pos = pose[self.keypoint2index['Hip']]
         neck_pos = pose[self.keypoint2index['Neck']]
 
         if joint_name == 'Spine':
-            # Spine在Hip到Neck的1/3处
-            return hip_pos + 0.33 * (neck_pos - hip_pos)
+            return hip_pos + 0.2 * (neck_pos - hip_pos)
         elif joint_name == 'Thorax':
-            # Thorax在Hip到Neck的2/3处
             return hip_pos + 0.67 * (neck_pos - hip_pos)
+        elif joint_name == 'RightHipTop':
+            right_hip_pos = pose[self.keypoint2index['RightHip']]
+            return np.array([right_hip_pos[0], hip_pos[1], right_hip_pos[2]])
+        elif joint_name == 'LeftHipTop':
+            left_hip_pos = pose[self.keypoint2index['LeftHip']]
+            return np.array([left_hip_pos[0], hip_pos[1], left_hip_pos[2]])
+        elif joint_name == 'LeftShoulderTop':
+            left_shoulder_pos = pose[self.keypoint2index['LeftShoulder']]
+            thorax_pos = self.get_estimated_position(pose, 'Thorax')
+            return np.array([left_shoulder_pos[0], thorax_pos[1], left_shoulder_pos[2]])
+        elif joint_name == 'RightShoulderTop':
+            right_shoulder_pos = pose[self.keypoint2index['RightShoulder']]
+            thorax_pos = self.get_estimated_position(pose, 'Thorax')
+            return np.array([right_shoulder_pos[0], thorax_pos[1], right_shoulder_pos[2]])
         else:
-            # 其他关节直接返回原始位置
             return pose[self.keypoint2index[joint_name]]
 
     def get_initial_offset(self, poses_3d):
-        # 使用第一帧来估算骨骼长度
-        sample_pose = poses_3d[0]
+        # 计算每一帧中各骨骼的长度
+        bone_lens = {joint: [] for joint in self.keypoint2index}
 
-        bone_lens = {self.root: [0]}
-        stack = [self.root]
-        while stack:
-            parent = stack.pop()
-            p_pos = self.get_estimated_position(sample_pose, parent)
+        for pose in poses_3d:
+            for parent, children in self.children.items():
+                p_pos = self.get_estimated_position(pose, parent)
+                for child in children:
+                    c_pos = self.get_estimated_position(pose, child)
+                    dist = np.linalg.norm(p_pos - c_pos)
+                    bone_lens[child].append(dist)
 
-            for child in self.children[parent]:
-                # 跳过EndSite节点的长度计算
-                if 'EndSite' in child:
-                    continue
-
-                stack.append(child)
-                c_pos = self.get_estimated_position(sample_pose, child)
-
-                # 计算骨骼长度
-                bone_length = np.linalg.norm(p_pos - c_pos)
-                bone_lens[child] = [bone_length]
-
-        bone_len = {}
-        for joint in self.keypoint2index:
-            if joint in bone_lens:
-                bone_len[joint] = np.mean(bone_lens[joint])
-            else:
-                # 如果没有计算过长度，使用默认值
-                bone_len[joint] = 0.5  # 默认骨骼长度
-
+        # 计算平均长度并结合初始方向
         initial_offset = {}
         for joint, direction in self.initial_directions.items():
-            direction = np.array(direction) / max(np.linalg.norm(direction), 1e-12)
-            initial_offset[joint] = direction * bone_len[joint]
+            avg_len = np.mean(bone_lens[joint]) if bone_lens[joint] else 0
+            dir_norm = np.array(direction) / max(np.linalg.norm(direction), 1e-12)
+            initial_offset[joint] = dir_norm * avg_len
 
         return initial_offset
 
     def get_bvh_header(self, poses_3d):
         initial_offset = self.get_initial_offset(poses_3d)
-
         nodes = {}
+
         for joint in self.keypoint2index:
-            is_root = joint == self.root
-            is_end_site = 'EndSite' in joint
-            # 不为EndSite关节创建BVH节点
-            if is_end_site:
-                continue
+            is_root = (joint == self.root)
+            is_end_site = (len(self.children[joint]) == 0)
 
             nodes[joint] = bvh_helper.BvhNode(
                 name=joint,
@@ -155,138 +155,88 @@ class AnimalSkeleton(object):
                 is_end_site=is_end_site,
             )
 
-        # 重建父子关系（跳过EndSite关节）
         for joint, children in self.children.items():
-            if joint not in nodes:
-                continue
-            valid_children = [child for child in children if child in nodes]
-            nodes[joint].children = [nodes[child] for child in valid_children]
-            for child in valid_children:
+            nodes[joint].children = [nodes[child] for child in children]
+            for child in children:
                 nodes[child].parent = nodes[joint]
 
-        header = bvh_helper.BvhHeader(root=nodes[self.root], nodes=nodes)
-        return header
+        return bvh_helper.BvhHeader(root=nodes[self.root], nodes=nodes)
 
     def pose2euler(self, pose, header):
         channel = []
         quats = {}
-        eulers = {}
         stack = [header.root]
+
+        # 预计算所有关节点的 3D 坐标（包括虚拟点）
+        positions = {joint: self.get_estimated_position(pose, joint) for joint in self.keypoint2index}
 
         while stack:
             node = stack.pop()
             joint = node.name
-            joint_pos = self.get_estimated_position(pose, joint)
 
             if node.is_root:
-                channel.extend(joint_pos)
+                channel.extend(positions[joint])  # Root 包含全局位移
 
+            # 初始化变量
             order = None
-            if joint == 'Hip':
-                left_hip_pos = self.get_estimated_position(pose, 'LeftHip')
-                right_hip_pos = self.get_estimated_position(pose, 'RightHip')
-                spine_pos = self.get_estimated_position(pose, 'Spine')
+            x_dir, y_dir, z_dir = None, None, None
 
-                x_dir = left_hip_pos - right_hip_pos
-                y_dir = None
-                z_dir = spine_pos - joint_pos
-                order = 'zyx'
-            elif joint in ['RightHip', 'RightKnee']:
-                hip_pos = self.get_estimated_position(pose, 'Hip')
-                right_hip_pos = self.get_estimated_position(pose, 'RightHip')
-                child_pos = self.get_estimated_position(pose, node.children[0].name) if node.children else None
+            # --- 确定当前关节的局部轴向 (DCM) ---
 
-                x_dir = hip_pos - right_hip_pos
-                y_dir = None
-                z_dir = joint_pos - child_pos if child_pos is not None else [0, 0, 1]
-                order = 'zyx'
-            elif joint in ['LeftHip', 'LeftKnee']:
-                left_hip_pos = self.get_estimated_position(pose, 'LeftHip')
-                hip_pos = self.get_estimated_position(pose, 'Hip')
-                child_pos = self.get_estimated_position(pose, node.children[0].name) if node.children else None
+            # 1. 躯干/脊椎部分 (Hip, Spine, Thorax)
+            if joint in ['Hip', 'Spine', 'Thorax']:
+                # Z轴：指向脊椎链的下一个节点 (前进方向)
+                # 根据 self.children 结构，Spine 是 Hip 的第 3 个孩子 (index 2)
+                if joint == 'Hip':
+                    z_dir = positions['Spine'] - positions['Hip']
+                elif joint == 'Spine':
+                    z_dir = positions['Thorax'] - positions['Spine']
+                elif joint == 'Thorax':
+                    z_dir = positions['Neck'] - positions['Thorax']
 
-                x_dir = left_hip_pos - hip_pos
-                y_dir = None
-                z_dir = joint_pos - child_pos if child_pos is not None else [0, 0, 1]
-                order = 'zyx'
-            elif joint == 'Spine':
-                left_hip_pos = self.get_estimated_position(pose, 'LeftHip')
-                right_hip_pos = self.get_estimated_position(pose, 'RightHip')
-                thorax_pos = self.get_estimated_position(pose, 'Thorax')
-
-                x_dir = left_hip_pos - right_hip_pos
-                y_dir = None
-                z_dir = thorax_pos - joint_pos
-                order = 'zyx'
-            elif joint == 'Thorax':
-                left_shoulder_pos = self.get_estimated_position(pose, 'LeftShoulder')
-                right_shoulder_pos = self.get_estimated_position(pose, 'RightShoulder')
-                spine_pos = self.get_estimated_position(pose, 'Spine')
-
-                x_dir = left_shoulder_pos - right_shoulder_pos
-                y_dir = None
-                z_dir = joint_pos - spine_pos
-                order = 'zyx'
-            elif joint == 'Neck':
-                thorax_pos = self.get_estimated_position(pose, 'Thorax')
-                head_pos = self.get_estimated_position(pose, 'Nose')
-
-                x_dir = None
-                y_dir = thorax_pos - joint_pos
-                z_dir = head_pos - thorax_pos
+                # X轴：使用左右胯部/肩膀的连线作为水平参考
+                x_dir = positions['LeftHipTop'] - positions['RightHipTop']
                 order = 'zxy'
-            elif joint == 'LeftShoulder':
-                left_elbow_pos = self.get_estimated_position(pose, 'LeftElbow')
-                left_wrist_pos = self.get_estimated_position(pose, 'LeftWrist')
 
-                x_dir = left_elbow_pos - joint_pos
-                y_dir = left_elbow_pos - left_wrist_pos
-                z_dir = None
-                order = 'xzy'
-            elif joint == 'LeftElbow':
-                left_wrist_pos = self.get_estimated_position(pose, 'LeftWrist')
-                left_shoulder_pos = self.get_estimated_position(pose, 'LeftShoulder')
+            # 2. 颈部 (Neck)
+            elif joint == 'Neck':
+                # Y轴：指向鼻尖 (向上/向前)
+                y_dir = positions['Nose'] - positions['Neck']
+                # X轴：参考肩膀宽度
+                x_dir = positions['LeftShoulderTop'] - positions['RightShoulderTop']
+                order = 'yxz'
 
-                x_dir = left_wrist_pos - joint_pos
-                y_dir = joint_pos - left_shoulder_pos
-                z_dir = None
-                order = 'xzy'
-            elif joint == 'RightShoulder':
-                right_elbow_pos = self.get_estimated_position(pose, 'RightElbow')
-                right_wrist_pos = self.get_estimated_position(pose, 'RightWrist')
+            # 3. 四肢部分 (肩膀、跨部、膝盖、肘部等)
+            elif any(k in joint for k in ['Shoulder', 'Hip', 'Knee', 'Elbow', 'Leg', 'Arm']):
+                if len(node.children) > 0:
+                    child_name = node.children[0].name
+                    # Y轴：主轴，指向下一个关节 (骨骼延伸方向)
+                    y_dir = positions[joint] - positions[child_name]
+                    # Z轴：参考轴，使用身体的前进方向 (Hip -> Thorax) 保持四肢朝向稳定
+                    z_dir = positions['Thorax'] - positions['Hip']
+                    order = 'yzx'
 
-                x_dir = joint_pos - right_elbow_pos
-                y_dir = right_elbow_pos - right_wrist_pos
-                z_dir = None
-                order = 'xzy'
-            elif joint == 'RightElbow':
-                right_wrist_pos = self.get_estimated_position(pose, 'RightWrist')
-                right_shoulder_pos = self.get_estimated_position(pose, 'RightShoulder')
-
-                x_dir = joint_pos - right_wrist_pos
-                y_dir = joint_pos - right_shoulder_pos
-                z_dir = None
-                order = 'xzy'
-
+            # --- 计算旋转矩阵与四元数 ---
             if order:
+                # 调用你修改后的 math3d.dcm_from_axis，它现在支持 None 传参了
                 dcm = math3d.dcm_from_axis(x_dir, y_dir, z_dir, order)
                 quats[joint] = math3d.dcm2quat(dcm)
             else:
-                quats[joint] = quats[self.parent[joint]].copy()
+                # 末端节点或未定义节点：继承父节点旋转
+                quats[joint] = quats[self.parent[joint]].copy() if self.parent[joint] else np.array([1, 0, 0, 0])
 
+            # --- 计算局部旋转并转为欧拉角 ---
             local_quat = quats[joint].copy()
             if node.parent:
-                local_quat = math3d.quat_divide(
-                    q=quats[joint], r=quats[node.parent.name]
-                )
+                # 相对旋转：Q_local = Q_parent^-1 * Q_global
+                local_quat = math3d.quat_divide(quats[joint], quats[node.parent.name])
 
-            euler = math3d.quat2euler(
-                q=local_quat, order=node.rotation_order
-            )
-            euler = np.rad2deg(euler)
-            eulers[joint] = euler
-            channel.extend(euler)
+            # 转换为 BVH 指定的欧拉角顺序
+            euler = math3d.quat2euler(local_quat, order=node.rotation_order)
+            # BVH 使用角度制
+            channel.extend(np.rad2deg(euler))
 
+            # 遍历子节点
             for child in node.children[::-1]:
                 if not child.is_end_site:
                     stack.append(child)

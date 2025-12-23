@@ -7,7 +7,7 @@ import numpy as np
 from pathlib import Path
 
 KEYPOINT_MAPPING = {
-    "Root of Tail": ["def_c_tail1_joint"],
+    "Root of Tail": ["def_c_hips_joint"],
     "Left Eye": ["def_eye_joint.L"],
     "Right Eye": ["def_eye_joint.R"],
     "Nose": ["def_c_nose_joint"],

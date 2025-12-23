@@ -13,10 +13,10 @@ sys.path.append(osp.join(osp.abspath(osp.dirname(__file__))))
 
 # 选择相应的subject(动物)
 subject_num = 0
-# action_num = 0
+action_num = 7
 
 
-def generate_bvh_for_all_actions(npz_path, subject_num=0):
+def generate_bvh_for_all_actions(npz_path, subject_num=0, action_num=None):
     """
     为指定subject的所有action生成bvh文件
     """
@@ -45,6 +45,14 @@ def generate_bvh_for_all_actions(npz_path, subject_num=0):
     actions_dict = positions_3d_dict[selected_subject]
     actions = list(actions_dict.keys())
     print(f'>>> 找到 {len(actions)} 个actions: {actions}')
+
+    # 根据action_num筛选
+    if action_num is not None:
+        if action_num >= len(actions):
+            raise ValueError(f"action_num {action_num} 超出范围。共有 {len(actions)} 个actions")
+        selected_action = actions[action_num]
+        actions = [selected_action]  # 只保留选中的action
+        print(f'>>> 根据action_num {action_num} 筛选后，选择action: {selected_action}')
 
     # 为每个action生成BVH文件
     generated_files = []
@@ -149,8 +157,8 @@ if __name__ == '__main__':
             # 使用预设的subject_num
             print(f"\n使用subject_num = {subject_num}: {subjects[subject_num]}")
 
-            # 生成所有actions的BVH文件
-            bvh_files = generate_bvh_for_all_actions(npz_file, subject_num)
+            # 生成BVH文件（根据action_num筛选）
+            bvh_files = generate_bvh_for_all_actions(npz_file, subject_num, action_num)
 
             print(f"\n=== 生成完成 ===")
             print(f"共生成 {len(bvh_files)} 个BVH文件:")
