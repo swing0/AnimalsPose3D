@@ -74,15 +74,18 @@ def main():
             # 原始数据 (Frames, Joints, 3)
             pos_3d_raw = dataset[subject][action]['positions']
 
-            # --- [1] 坐标转换: Z-up -> Y-up ---
-            # 原 X->X, 原 Z->Y(高), 原 Y->-Z(深)
-            pos_3d_yup = np.zeros_like(pos_3d_raw)
-            pos_3d_yup[..., 0] = pos_3d_raw[..., 0]
-            pos_3d_yup[..., 1] = pos_3d_raw[..., 2]
-            pos_3d_yup[..., 2] = -pos_3d_raw[..., 1]
+            # --- [1] 坐标处理 ---
+            # 修正：step 01 已经将坐标系转换为 视觉 Y-up (X, Y, Z)
+            # 其中 Y 是高度，Z 是深度 (-Z 向前)
+            # 所以这里不需要再次进行轴交换，直接使用即可
+            pos_3d_yup = pos_3d_raw.copy()
 
             # --- [2] Root-Relative 中心化 ---
             # 假设第0个关键点是 "Root of Tail"
+            # 注意：在 01 中其实已经做过一次 Root-Relative，但为了保险起见（或针对多视图增强），
+            # 这里基于当前序列的第一帧或每一帧重新计算中心化是合理的。
+            # 通常我们每一帧都减去根节点位置，或者减去第一帧根节点。
+            # 这里保持每一帧都减去根节点，使得根节点永远在原点 (0,0,0)
             root_pos = pos_3d_yup[:, 0:1, :]
             pos_3d_rel = pos_3d_yup - root_pos
 

@@ -31,7 +31,7 @@ KEYPOINT_ORDER = list(KEYPOINT_MAPPING.keys())
 
 
 # 过滤阈值
-MIN_FRAMES = 50  # 最少帧数要求
+MIN_FRAMES = 60  # 最少帧数要求
 
 
 def extract_keypoints_from_frame(frame_data):
