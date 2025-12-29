@@ -7,7 +7,7 @@ import numpy as np
 from pathlib import Path
 
 KEYPOINT_MAPPING = {
-    "Root of Tail": ["def_c_hips_joint"],
+    "Root of Tail": ["def_c_tail1_joint"],
     "Left Eye": ["def_eye_joint.L"],
     "Right Eye": ["def_eye_joint.R"],
     "Nose": ["def_c_nose_joint"],
@@ -126,12 +126,9 @@ def process_json_file(json_data, zip_name, json_file_name):
         # 1. 形状转换为 (Frames, Joints, 3)
         np_data = np.array(frames_np_data, dtype=np.float32).reshape(-1, len(KEYPOINT_ORDER), 3)
 
-        # 2. 坐标系转换: 游戏 Z-up (X, Y, Z) -> 视觉 Y-up (X, Z, -Y)
-        # 这里的映射逻辑：原 Z 是高度 -> 现 Y；原 Y 是深度 -> 现 -Z
-        standard_3d = np.zeros_like(np_data)
-        standard_3d[..., 0] = np_data[..., 0]  # X -> X
-        standard_3d[..., 1] = np_data[..., 2]  # Z -> Y (Height)
-        standard_3d[..., 2] = -np_data[..., 1]  # Y -> -Z (Depth)
+        # 2. 坐标系转换: 修正动物朝向 (X, Y, Z) -> (X, Y, Z)
+        # 正确的映射逻辑：原坐标系是Y-up，保持不变
+        standard_3d = np_data.copy()  # 直接使用原始数据，不进行坐标轴交换
 
         # 3. Root-Relative 中心化
         # 假设 KEYPOINT_ORDER[0] 是 "Root of Tail" (根节点)

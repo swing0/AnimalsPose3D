@@ -47,30 +47,67 @@ def train():
 
     # 划分与提取
     subs = dataset.subjects()
-    train_subs, test_subs = subs[:int(len(subs) * 0.8)], subs[int(len(subs) * 0.8):]
+    # train_subs, test_subs = subs[:int(len(subs) * 0.8)], subs[int(len(subs) * 0.8):]
 
-    def fetch(subjects):
+    # Create (subject, action) pairs for training and testing
+    all_data_source = []
+    for s in subs:
+        for a in dataset[s].keys():
+            all_data_source.append((s, a))
+
+    # Split into train and test
+    split_idx = int(len(all_data_source) * 0.8)
+    train_data_source = all_data_source[:split_idx]
+    test_data_source = all_data_source[split_idx:]
+
+    print(f"  Train Source Size: {len(train_data_source)}")
+    print(f"  Test Source Size: {len(test_data_source)}")
+
+    def fetch(data_source, label=""):
         o3, o2 = [], []
-        for s in subjects:
-            for a in dataset[s].keys():
+        skipped = 0
+        for (s, a) in data_source:
+            if s in keypoints_2d and a in keypoints_2d[s]: # 确保2D数据存在
                 for v in range(len(keypoints_2d[s][a])):
-                    o2.append(keypoints_2d[s][a][v]);
+                    o2.append(keypoints_2d[s][a][v])
+                    # 注意：dataset[s][a]['positions_3d'] 已经在上面被处理成列表了
                     o3.append(dataset[s][a]['positions_3d'][v])
+            else:
+                skipped += 1
+                if skipped <= 5: print(f"    [WARN] Key missing in 2D: {s}/{a}")
+        
+        if skipped > 0: print(f"    Total skipped in {label}: {skipped}")
         return o3, o2
 
-    t3, t2 = fetch(train_subs)
+    t3, t2 = fetch(train_data_source, "Train")
+    v3, v2 = fetch(test_data_source, "Validation") # 验证集
 
+    print(f"  由 {len(t2)} 个序列组成训练集")
+    print(f"  由 {len(v2)} 个序列组成验证集")
+    if len(t2) == 0:
+        raise ValueError("训练集为空! 请检查 failing keys match (2D vs 3D) 或 split logic.")
+    if len(v2) == 0:
+        raise ValueError("验证集为空! 请检查数据划分逻辑.")
+    
     # --- 模型与优化 ---
     model = AnimalPoseTransformer(num_joints=t2[0].shape[-2], embed_dim=256, seq_len=SEQ_LEN).to(device)
     optimizer = optim.AdamW(model.parameters(), lr=LR, weight_decay=0.01)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5)
 
+    # --- 数据生成器 ---
     train_gen = ChunkedGenerator(args.batch_size, None, t3, t2, chunk_length=SEQ_LEN,
                                  shuffle=True, augment=True, kps_left=kps_left, kps_right=kps_right,
                                  joints_left=kps_left, joints_right=kps_right)
+    
+    val_gen = ChunkedGenerator(args.batch_size, None, v3, v2, chunk_length=SEQ_LEN,
+                               shuffle=False, augment=False, kps_left=kps_left, kps_right=kps_right,
+                               joints_left=kps_left, joints_right=kps_right)
 
     print(f"🚀 启动加强版训练 | SEQ_LEN: {SEQ_LEN}")
-    best_loss = float('inf')
+    best_val_loss = float('inf')
+    patience_counter = 0
+    max_patience = 20  # 早停耐心值
+    early_stop = False
 
     for epoch in range(args.epochs):
         # 1. 线性预热
@@ -82,9 +119,10 @@ def train():
         epoch_loss = 0
         num_batches = 0
 
+        # 训练阶段
         for _, batch_3d, batch_2d in train_gen.next_epoch():
             in_2d = torch.from_numpy(batch_2d.astype('float32')).to(device)
-            gt_3d = torch.from_numpy(batch_3d.astype('float32')).to(device) * 1000  # 转毫米
+            gt_3d = torch.from_numpy(batch_3d.astype('float32')).to(device)  
             gt_3d -= gt_3d[:, :, 0:1, :]  # Root-relative
 
             optimizer.zero_grad()
@@ -96,20 +134,64 @@ def train():
             total_loss = loss_mpjpe + 0.1 * loss_bone
 
             total_loss.backward()
+            # 添加梯度裁剪
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
 
             epoch_loss += loss_mpjpe.item()  # 只记录物理含义明确的 MPJPE
             num_batches += 1
 
-        avg_loss = epoch_loss / num_batches
-        scheduler.step(avg_loss)
-
-        print(f"Epoch {epoch + 1:03d} | MPJPE: {avg_loss:.2f}mm | LR: {optimizer.param_groups[0]['lr']:.6f}")
-
-        if avg_loss < best_loss:
-            best_loss = avg_loss
+        avg_train_loss = epoch_loss / num_batches
+        
+        # 验证阶段
+        model.eval()
+        val_loss = 0
+        val_batches = 0
+         
+        with torch.no_grad():
+            for _, batch_3d, batch_2d in val_gen.next_epoch():
+                in_2d = torch.from_numpy(batch_2d.astype('float32')).to(device)
+                gt_3d = torch.from_numpy(batch_3d.astype('float32')).to(device)  # 保持米制单位
+                gt_3d -= gt_3d[:, :, 0:1, :]  # Root-relative
+                
+                pred_3d = model(in_2d)
+                loss_mpjpe = mpjpe(pred_3d, gt_3d)
+                val_loss += loss_mpjpe.item()
+                val_batches += 1
+        
+        avg_val_loss = val_loss / val_batches if val_batches > 0 else float('inf')
+        
+        # 学习率调度
+        scheduler.step(avg_val_loss)
+        
+        # 早停机制
+        if avg_val_loss < best_val_loss:
+            best_val_loss = avg_val_loss
+            patience_counter = 0
+            # 保存最佳模型
             os.makedirs(args.checkpoint, exist_ok=True)
-            torch.save(model.state_dict(), os.path.join(args.checkpoint, 'best_transformer_v2.pt'))
+            torch.save({
+                'epoch': epoch + 1,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'train_loss': avg_train_loss,
+                'val_loss': avg_val_loss,
+                'best_val_loss': best_val_loss
+            }, os.path.join(args.checkpoint, 'best_transformer_v2.pt'))
+            print(f"💾 保存最佳模型 | 验证损失: {avg_val_loss * 1000:.2f}mm")
+        else:
+            patience_counter += 1
+            if patience_counter >= max_patience:
+                early_stop = True
+                print(f"🛑 早停触发 | 连续 {max_patience} 个epoch验证损失未改善")
+        
+        # 打印训练日志
+        print(f"Epoch {epoch + 1:03d} | Train: {avg_train_loss * 1000:.2f}mm | Val: {avg_val_loss * 1000:.2f}mm | LR: {optimizer.param_groups[0]['lr']:.6f} | Patience: {patience_counter}/{max_patience}")
+        
+        # 检查早停
+        if early_stop:
+            print(f"🎯 训练完成! 最佳验证损失: {best_val_loss * 1000:.2f}mm")
+            break
 
 
 if __name__ == '__main__':

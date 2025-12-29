@@ -42,15 +42,14 @@ class AnimalPoseTransformer(nn.Module):
             TransformerBlock(embed_dim, num_heads, dropout) for _ in range(depth // 2)
         ])
 
-        # 4. 加强型回归头 (重要修改)
+        # 4. 修正回归头设计
         self.regression_head = nn.Sequential(
             nn.Linear(embed_dim, 512),
-            nn.BatchNorm1d(512),
             nn.ReLU(),
             nn.Dropout(dropout),
             nn.Linear(512, 256),
             nn.ReLU(),
-            nn.Linear(256, 3)
+            nn.Linear(256, num_joints * 3)  # 输出所有关节的3D坐标
         )
 
     def forward(self, x):
@@ -63,8 +62,8 @@ class AnimalPoseTransformer(nn.Module):
             x = block(x)
 
         # 聚合空间信息
-        x = torch.mean(x, dim=1)
-        x = x.view(b, t, -1)
+        x = torch.mean(x, dim=1)  # (B*T, Embed)
+        x = x.view(b, t, -1)      # (B, T, Embed)
 
         # 时间建模
         x = x + self.pos_embed
@@ -72,10 +71,9 @@ class AnimalPoseTransformer(nn.Module):
             x = block(x)
 
         # 回归 3D 坐标
-        # 重塑以适配 BatchNorm1d: (B*T, Embed)
+        # 重塑: (B*T, Embed) -> (B*T, J*3) -> (B, T, J, 3)
         x = x.view(b * t, -1)
         x = self.regression_head(x)
-
-        # 恢复形状: (B, T, J, 3)
-        x = x.view(b, t, 1, 3).expand(-1, -1, j, -1)
+        x = x.view(b, t, j, 3)
+        
         return x

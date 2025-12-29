@@ -48,16 +48,16 @@ def visualize(data_3d_path, data_2d_path):
 
     for group_name, group_info in SKELETON_GROUPS.items():
         for edge in group_info['edges']:
-            # 注意：绘图时将 3D 的 Y 放在 Z 轴位置，以对齐视觉上的“高度”
-            ax1.plot(frame_3d[edge, 0], frame_3d[edge, 2], frame_3d[edge, 1],
+            # 修正：使用正确的坐标系 (X, Y, Z)
+            ax1.plot(frame_3d[edge, 0], frame_3d[edge, 1], frame_3d[edge, 2],
                      color=group_info['color'], lw=2)
 
     # 画出所有关节点
-    ax1.scatter(frame_3d[:, 0], frame_3d[:, 2], frame_3d[:, 1], color='gray', s=20)
+    ax1.scatter(frame_3d[:, 0], frame_3d[:, 1], frame_3d[:, 2], color='gray', s=20)
 
     ax1.set_xlabel('X (Side)');
-    ax1.set_ylabel('Z (Depth)');
-    ax1.set_zlabel('Y (Height)')
+    ax1.set_ylabel('Y (Depth)');
+    ax1.set_zlabel('Z (Height)')
     # 设置相等的比例尺
     max_range = np.array([frame_3d[:, 0].max() - frame_3d[:, 0].min(),
                           frame_3d[:, 1].max() - frame_3d[:, 1].min(),

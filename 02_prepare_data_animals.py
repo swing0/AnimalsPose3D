@@ -9,7 +9,7 @@ sys.path.append('../')
 from common.animals_dataset import AnimalsDataset
 
 
-def get_random_camera(dist_range=(5.0, 8.0), elev_range=(-10, 45), azim_range=(0, 360)):
+def get_random_camera(dist_range=(4.0, 10.0), elev_range=(0, 45), azim_range=(0, 360)):
     """在球面上随机采样一个相机位置并计算 LookAt 矩阵"""
     dist = np.random.uniform(*dist_range)
     elev = np.deg2rad(np.random.uniform(*elev_range))
