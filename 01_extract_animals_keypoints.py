@@ -123,16 +123,23 @@ def process_json_file(json_data, zip_name, json_file_name):
                 frames_np_data.append(frame_coords)
 
     if frames_np_data:
-        np_data = np.array(frames_np_data, dtype=np.float32)
-        np_data = np_data.reshape(len(frames_np_data), len(KEYPOINT_ORDER), 3)
-        animation_name = extract_animation_name(json_file_name)
+        # 1. 形状转换为 (Frames, Joints, 3)
+        np_data = np.array(frames_np_data, dtype=np.float32).reshape(-1, len(KEYPOINT_ORDER), 3)
 
-        # 检查帧数是否满足最小要求
-        if len(np_data) >= MIN_FRAMES:
-            return animation_name, np_data
-        else:
-            print(f"    跳过动画 {animation_name}: 只有 {len(np_data)} 帧 (< {MIN_FRAMES} 帧阈值)")
-            return None, np.array([], dtype=np.float32)
+        # 2. 坐标系转换: 游戏 Z-up (X, Y, Z) -> 视觉 Y-up (X, Z, -Y)
+        # 这里的映射逻辑：原 Z 是高度 -> 现 Y；原 Y 是深度 -> 现 -Z
+        standard_3d = np.zeros_like(np_data)
+        standard_3d[..., 0] = np_data[..., 0]  # X -> X
+        standard_3d[..., 1] = np_data[..., 2]  # Z -> Y (Height)
+        standard_3d[..., 2] = -np_data[..., 1]  # Y -> -Z (Depth)
+
+        # 3. Root-Relative 中心化
+        # 假设 KEYPOINT_ORDER[0] 是 "Root of Tail" (根节点)
+        root_pos = standard_3d[:, 0:1, :]
+        standard_3d = standard_3d - root_pos
+
+        animation_name = extract_animation_name(json_file_name)
+        return animation_name, standard_3d
     else:
         return None, np.array([], dtype=np.float32)
 
@@ -184,7 +191,7 @@ def process_zip_file(zip_path):
 
 def main():
     # 设置路径
-    input_dir = r"D:\workplace\export_json_test"
+    input_dir = r"D:\workplace\export_json_addax"
     output_dir = r"npz\real_npz"
 
     # 创建输出目录

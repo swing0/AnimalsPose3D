@@ -1,177 +1,122 @@
-# 02_prepare_data_animals.py
-import argparse
 import os
 import numpy as np
 import sys
+from tqdm import tqdm
 
-# 添加common模块路径
+# 假设你的目录结构，确保能导入 AnimalsDataset
 sys.path.append('../')
-
+# 注意：这里保留你的 AnimalsDataset 导入，但在处理逻辑中加入了坐标修正
 from common.animals_dataset import AnimalsDataset
 
 
-def simple_orthographic_project(positions_3d, view_angle='front'):
-    """
-    简单的正交投影到2D
-    view_angle: 'front', 'side', 'top', 'oblique'
-    """
-    if view_angle == 'front':
-        # 前视图: 移除Z轴，只保留X,Y
-        return positions_3d[..., :2].copy()
-    elif view_angle == 'side':
-        # 侧视图: 移除X轴，Z,Y (注意调整坐标顺序)
-        return positions_3d[..., [2, 1]].copy()
-    elif view_angle == 'top':
-        # 顶视图: 移除Y轴，X,Z
-        return positions_3d[..., [0, 2]].copy()
-    elif view_angle == 'oblique':
-        # 斜前视图: 简单的轴测投影
-        x = positions_3d[..., 0]
-        y = positions_3d[..., 1]
-        z = positions_3d[..., 2]
-        # 简单的45度斜投影
-        u = x - z * 0.35
-        v = y - z * 0.35
-        return np.stack([u, v], axis=-1)
-    else:
-        raise ValueError(f"Unknown view angle: {view_angle}")
+def get_random_camera(dist_range=(5.0, 8.0), elev_range=(-10, 45), azim_range=(0, 360)):
+    """在球面上随机采样一个相机位置并计算 LookAt 矩阵"""
+    dist = np.random.uniform(*dist_range)
+    elev = np.deg2rad(np.random.uniform(*elev_range))
+    azim = np.deg2rad(np.random.uniform(*azim_range))
+
+    # 相机在世界坐标系的位置 (Y-up)
+    cam_x = dist * np.cos(elev) * np.sin(azim)
+    cam_y = dist * np.sin(elev)
+    cam_z = dist * np.cos(elev) * np.cos(azim)
+    cam_pos = np.array([cam_x, cam_y, cam_z])
+
+    target = np.array([0, 0, 0])  # 始终注视原点
+    up = np.array([0, 1, 0])  # Y方向向上
+
+    # 计算 LookAt 旋转矩阵
+    z_axis = cam_pos - target
+    z_axis /= np.linalg.norm(z_axis)
+    x_axis = np.cross(up, z_axis)
+    x_axis /= np.linalg.norm(x_axis)
+    y_axis = np.cross(z_axis, x_axis)
+
+    R = np.stack([x_axis, y_axis, z_axis], axis=0)  # (3, 3) 外参旋转
+    return R, cam_pos
 
 
-def normalize_2d_positions(positions_2d):
-    """
-    归一化2D坐标到 [-1, 1] 范围
-    """
-    # 找到所有帧的边界
-    all_positions = positions_2d.reshape(-1, 2)
-    min_val = all_positions.min(axis=0)
-    max_val = all_positions.max(axis=0)
+def project_perspective(pos_3d, R, cam_pos, f=1.0):
+    """透视投影：将世界坐标转换为2D归一化平面"""
+    # 1. 转换到相机坐标系: P_cam = R * (P_world - cam_pos)
+    rel_pos = pos_3d - cam_pos
+    pos_cam = np.dot(rel_pos, R.T)
 
-    # 计算中心点和范围
-    center = (min_val + max_val) / 2
-    scale = np.max(max_val - min_val)
+    # 2. 透视公式: u = f * x / z; v = f * y / z
+    # 注意：在相机坐标系中，向前是 -z 轴，所以深度为 -pos_cam[..., 2]
+    depth = -pos_cam[..., 2]
+    depth[depth < 0.1] = 0.1  # 防止除以0
 
-    if scale == 0:
-        scale = 1.0
+    u = (f * pos_cam[..., 0]) / depth
+    v = (f * pos_cam[..., 1]) / depth
 
-    # 归一化到 [-1, 1]
-    normalized = (positions_2d - center) / (scale / 2)
-    return normalized
+    return np.stack([u, v], axis=-1)
 
 
 def main():
-    # 输入输出文件
     input_npz = r'npz\real_npz\data_3d_animals.npz'
     output_2d = r'npz\real_npz\data_2d_animals_gt.npz'
+    NUM_VIEWS_PER_ANIM = 4  # 每个动画序列生成多少个随机视角
 
-    # 检查输入文件是否存在
     if not os.path.exists(input_npz):
-        print(f"错误: 输入文件 {input_npz} 不存在")
+        print(f"Error: {input_npz} not found")
         return
 
-    # 检查输出目录是否存在
-    output_dir = os.path.dirname(output_2d)
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir, exist_ok=True)
-        print(f"创建输出目录: {output_dir}")
+    print('加载 3D 数据并重新处理坐标系...')
+    dataset = AnimalsDataset(input_npz)
+    output_2d_poses = {}
+    processed_3d_data = {}  # 存储修正后的 3D 坐标
 
-    print(f"输入文件: {input_npz}")
-    print(f"输出文件: {output_2d}")
+    for subject in dataset.subjects():
+        output_2d_poses[subject] = {}
+        processed_3d_data[subject] = {}
 
-    # 创建2D姿态文件
-    print('使用简单投影生成2D姿态...')
+        for action in dataset[subject].keys():
+            # 原始数据 (Frames, Joints, 3)
+            pos_3d_raw = dataset[subject][action]['positions']
 
-    try:
-        # 加载动物数据集
-        dataset = AnimalsDataset(input_npz)
-        output_2d_poses = {}
+            # --- [1] 坐标转换: Z-up -> Y-up ---
+            # 原 X->X, 原 Z->Y(高), 原 Y->-Z(深)
+            pos_3d_yup = np.zeros_like(pos_3d_raw)
+            pos_3d_yup[..., 0] = pos_3d_raw[..., 0]
+            pos_3d_yup[..., 1] = pos_3d_raw[..., 2]
+            pos_3d_yup[..., 2] = -pos_3d_raw[..., 1]
 
-        # 定义四个简单的视角
-        view_angles = ['front', 'side', 'oblique', 'top']
-        view_names = ['前视图', '侧视图', '斜视图', '顶视图']
+            # --- [2] Root-Relative 中心化 ---
+            # 假设第0个关键点是 "Root of Tail"
+            root_pos = pos_3d_yup[:, 0:1, :]
+            pos_3d_rel = pos_3d_yup - root_pos
 
-        for subject in dataset.subjects():
-            output_2d_poses[subject] = {}
-            print(f"处理动物: {subject}")
+            processed_3d_data[subject][action] = pos_3d_rel
 
-            for action in dataset[subject].keys():
-                anim = dataset[subject][action]
-                positions_3d = anim['positions']
+            # --- [3] 生成多个随机透视视角 ---
+            views_2d = []
+            for _ in range(NUM_VIEWS_PER_ANIM):
+                R, cam_pos = get_random_camera()
+                pos_2d = project_perspective(pos_3d_rel, R, cam_pos)
 
-                print(f"  动作 {action} 的3D数据形状: {positions_3d.shape}")
-                print(f"  3D数据范围 - X: [{positions_3d[..., 0].min():.2f}, {positions_3d[..., 0].max():.2f}]")
-                print(f"            Y: [{positions_3d[..., 1].min():.2f}, {positions_3d[..., 1].max():.2f}]")
-                print(f"            Z: [{positions_3d[..., 2].min():.2f}, {positions_3d[..., 2].max():.2f}]")
+                # 逐帧归一化到 [-1, 1] (研究常用做法)
+                for f in range(pos_2d.shape[0]):
+                    frame = pos_2d[f]
+                    max_range = np.max(np.abs(frame))
+                    if max_range > 0:
+                        pos_2d[f] = frame / max_range
 
-                positions_2d_all_views = []
+                views_2d.append(pos_2d.astype('float32'))
 
-                for i, (view_angle, view_name) in enumerate(zip(view_angles, view_names)):
-                    print(f"    生成 {view_name} 投影...")
+            output_2d_poses[subject][action] = views_2d
 
-                    # 简单的正交投影
-                    positions_2d = simple_orthographic_project(positions_3d, view_angle)
+    # 保存元数据与更新后的 3D 数据
+    metadata = {
+        'num_joints': 17,
+        'keypoints_name': ["Root of Tail", "Left Eye", "Right Eye", "Nose", "Neck", "L-Shld", "L-Elbw", "L-Paw",
+                           "R-Shld", "R-Elbw", "R-Paw", "L-Hip", "L-Knee", "L-BackPaw", "R-Hip", "R-Knee", "R-BackPaw"],
+        'projection': 'perspective_random_spherical'
+    }
 
-                    print(f"      原始2D范围 - u: [{positions_2d[..., 0].min():.2f}, {positions_2d[..., 0].max():.2f}]")
-                    print(f"                 v: [{positions_2d[..., 1].min():.2f}, {positions_2d[..., 1].max():.2f}]")
-
-                    # 归一化到 [-1, 1] 范围
-                    positions_2d_normalized = normalize_2d_positions(positions_2d)
-
-                    print(
-                        f"      归一化2D范围 - u: [{positions_2d_normalized[..., 0].min():.2f}, {positions_2d_normalized[..., 0].max():.2f}]")
-                    print(
-                        f"                   v: [{positions_2d_normalized[..., 1].min():.2f}, {positions_2d_normalized[..., 1].max():.2f}]")
-
-                    positions_2d_all_views.append(positions_2d_normalized.astype('float32'))
-
-                output_2d_poses[subject][action] = positions_2d_all_views
-                print(f"  动作 {action}: 生成 {len(positions_2d_all_views)} 个视角")
-
-        # 保存元数据
-        metadata = {
-            'num_joints': dataset.skeleton().num_joints(),
-            'keypoints_symmetry': [
-                dataset.skeleton().joints_left(),
-                dataset.skeleton().joints_right()
-            ],
-            'skeleton_parents': dataset.skeleton().parents(),
-            'keypoints_name': [
-                "Root of Tail", "Left Eye", "Right Eye", "Nose", "Neck",
-                "Left Shoulder", "Left Elbow", "Left Front Paw",
-                "Right Shoulder", "Right Elbow", "Right Front Paw",
-                "Left Hip", "Left Knee", "Left Back Paw",
-                "Right Hip", "Right Knee", "Right Back Paw"
-            ],
-            'view_angles': view_angles,
-            'view_names': view_names,
-            'projection_type': 'simple_orthographic'
-        }
-
-        # 保存2D姿态数据
-        print('保存...')
-        np.savez_compressed(output_2d, positions_2d=output_2d_poses, metadata=metadata)
-
-        # 验证保存的数据
-        print('验证保存的数据...')
-        saved_data = np.load(output_2d, allow_pickle=True)
-        positions_2d_loaded = saved_data['positions_2d'].item()
-        metadata_loaded = saved_data['metadata'].item()
-
-        print(f"保存的动物数量: {len(positions_2d_loaded)}")
-        for subject, actions in positions_2d_loaded.items():
-            print(f"  {subject}: {len(actions)} 个动作")
-            for action, views in actions.items():
-                print(f"    {action}: {len(views)} 个视角, 形状: {views[0].shape if len(views) > 0 else 'N/A'}")
-
-        print(f"关节数量: {metadata_loaded['num_joints']}")
-        print(f"投影类型: {metadata_loaded['projection_type']}")
-        print(f"视角: {metadata_loaded['view_angles']}")
-
-        print('完成!')
-
-    except Exception as e:
-        print(f"处理过程中发生错误: {e}")
-        import traceback
-        traceback.print_exc()
+    # 注意：我们同时保存修正后的 3D 坐标，这才是训练 3D 提升模型的目标值
+    np.savez_compressed(output_2d, positions_2d=output_2d_poses, metadata=metadata)
+    np.savez_compressed(input_npz, positions_3d=processed_3d_data)  # 覆写或另存修正后的 3D
+    print(f'成功生成数据。每个动作包含 {NUM_VIEWS_PER_ANIM} 个随机透视视角。')
 
 
 if __name__ == '__main__':
