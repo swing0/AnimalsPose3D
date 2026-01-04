@@ -247,7 +247,7 @@ def visualize_multiple_views(sequence_3d, subject, action):
 if __name__ == '__main__':
     # 加载数据
     data_3d_path = r'npz\real_npz\data_3d_animals.npz'
-    subject = 'Addax_Female'
+    subject = 'American_Bison_Male'
     action = 'walktostand'
     
     try:

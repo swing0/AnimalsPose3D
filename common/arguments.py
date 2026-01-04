@@ -53,7 +53,7 @@ def parse_args():
     # Model arguments
     parser.add_argument('-s', '--stride', default=1, type=int, metavar='N', help='chunk size to use during training')
     parser.add_argument('-e', '--epochs', default=100, type=int, metavar='N', help='number of training epochs')
-    parser.add_argument('-b', '--batch-size', default=512, type=int, metavar='N',
+    parser.add_argument('-b', '--batch-size', default=8, type=int, metavar='N',
                         help='batch size in terms of predicted frames')
     parser.add_argument('-drop', '--dropout', default=0.25, type=float, metavar='P', help='dropout probability')
     parser.add_argument('-lr', '--learning-rate', default=0.001, type=float, metavar='LR', help='initial learning rate')

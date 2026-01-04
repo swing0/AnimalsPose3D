@@ -32,33 +32,26 @@ def visualize(data_3d_path, data_2d_path):
     d3 = np.load(data_3d_path, allow_pickle=True)['positions_3d'].item()
     d2 = np.load(data_2d_path, allow_pickle=True)['positions_2d'].item()
 
-    # 自动获取第一个动物和第一个动作（也可以手动指定）
+    # 自动获取第一个动物和第一个动作
     sub = list(d3.keys())[0]
-    act = list(d3[sub].keys())[3]
+    act = list(d3[sub].keys())[0]  # 使用第一个动作
 
     # 抽取一帧数据
-    frame_3d = d3[sub][act][40]  # 取第10帧
-    frame_2d = d2[sub][act][1][40]  # 第一个视角的第10帧
+    frame_3d = d3[sub][act][0]  # 取第0帧
 
-    fig = plt.figure(figsize=(15, 7))
+    fig = plt.figure(figsize=(20, 10))
 
     # --- 左图：3D 骨架 ---
-    ax1 = fig.add_subplot(121, projection='3d')
+    ax1 = fig.add_subplot(231, projection='3d')
     ax1.set_title(f"3D Skeleton: {sub} ({act})")
 
     for group_name, group_info in SKELETON_GROUPS.items():
         for edge in group_info['edges']:
-            # 修正：使用正确的坐标系 (X, Y, Z)
             ax1.plot(frame_3d[edge, 0], frame_3d[edge, 1], frame_3d[edge, 2],
                      color=group_info['color'], lw=2)
 
-    # 画出所有关节点
     ax1.scatter(frame_3d[:, 0], frame_3d[:, 1], frame_3d[:, 2], color='gray', s=20)
-
-    ax1.set_xlabel('X (Side)');
-    ax1.set_ylabel('Y (Depth)');
-    ax1.set_zlabel('Z (Height)')
-    # 设置相等的比例尺
+    ax1.set_xlabel('X (Side)'); ax1.set_ylabel('Y (Depth)'); ax1.set_zlabel('Z (Height)')
     max_range = np.array([frame_3d[:, 0].max() - frame_3d[:, 0].min(),
                           frame_3d[:, 1].max() - frame_3d[:, 1].min(),
                           frame_3d[:, 2].max() - frame_3d[:, 2].min()]).max() / 2.0
@@ -66,22 +59,31 @@ def visualize(data_3d_path, data_2d_path):
     ax1.set_ylim(-max_range, max_range)
     ax1.set_zlim(-max_range, max_range)
 
-    # --- 右图：2D 投影 ---
-    ax2 = fig.add_subplot(122)
-    ax2.set_title("2D Perspective Projection (Color Coded)")
+    # --- 四个摄像机视角 ---
+    view_titles = ['Camera 0: Front (0°)', 'Camera 1: Right (90°)', 
+                   'Camera 2: Back (180°)', 'Camera 3: Left (270°)']
+    
+    for i in range(4):
+        ax = fig.add_subplot(2, 3, i+2)
+        frame_2d = d2[sub][act][i][0]  # 第i个视角的第0帧
+        
+        ax.set_title(view_titles[i])
+        
+        for group_name, group_info in SKELETON_GROUPS.items():
+            is_first = True
+            for edge in group_info['edges']:
+                label = group_info['label'] if is_first else None
+                ax.plot(frame_2d[edge, 0], frame_2d[edge, 1],
+                         color=group_info['color'], lw=2, label=label)
+                is_first = False
 
-    for group_name, group_info in SKELETON_GROUPS.items():
-        is_first = True  # 用于图例展示
-        for edge in group_info['edges']:
-            label = group_info['label'] if is_first else None
-            ax2.plot(frame_2d[edge, 0], -frame_2d[edge, 1],
-                     color=group_info['color'], lw=2, label=label)
-            is_first = False
-
-    ax2.scatter(frame_2d[:, 0], -frame_2d[:, 1], color='gray', s=20, zorder=5)
-    ax2.set_aspect('equal')
-    ax2.legend(loc='upper right', fontsize='small')
-    ax2.grid(True, linestyle='--', alpha=0.6)
+        ax.scatter(frame_2d[:, 0], frame_2d[:, 1], color='gray', s=20, zorder=5)
+        ax.set_aspect('equal')
+        ax.grid(True, linestyle='--', alpha=0.6)
+        
+        # 只在第一个2D图中显示图例
+        if i == 0:
+            ax.legend(loc='upper right', fontsize='small')
 
     plt.tight_layout()
     plt.show()

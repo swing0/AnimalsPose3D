@@ -188,7 +188,7 @@ def process_zip_file(zip_path):
 
 def main():
     # 设置路径
-    input_dir = r"D:\workplace\export_json_addax"
+    input_dir = r"D:\workplace\export_json_20"
     output_dir = r"npz\real_npz"
 
     # 创建输出目录
