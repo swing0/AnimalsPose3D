@@ -121,59 +121,6 @@ class UltraLightAnimalPoseTransformer(nn.Module):
         return x
 
 
-class TinyAnimalPoseTransformer(nn.Module):
-    """
-    超小模型 - 如果上面的模型还是太大
-    使用卷积+注意力混合架构
-    """
-    def __init__(self, num_joints=17, seq_len=16, hidden_dim=64):
-        super().__init__()
-        
-        # 1. 卷积编码器 (节省显存)
-        self.conv_encoder = nn.Sequential(
-            nn.Conv2d(2, 32, kernel_size=(3, 3), padding=1),  # (B, 32, T, J)
-            nn.ReLU(),
-            nn.Conv2d(32, 64, kernel_size=(3, 3), padding=1),
-            nn.ReLU(),
-            nn.AdaptiveAvgPool2d((seq_len, num_joints))
-        )
-        
-        # 2. 轻量注意力
-        self.attention = nn.MultiheadAttention(
-            embed_dim=hidden_dim,
-            num_heads=2,
-            dropout=0.1,
-            batch_first=True
-        )
-        
-        # 3. 输出层
-        self.output = nn.Sequential(
-            nn.Linear(hidden_dim, 32),
-            nn.ReLU(),
-            nn.Linear(32, 3)
-        )
-        
-        print(f"🔧 超小模型创建完成: {sum(p.numel() for p in self.parameters()):,}参数")
-    
-    def forward(self, x):
-        # x: (B, T, J, 2)
-        b, t, j, _ = x.shape
-        
-        # 转置为卷积格式
-        x = x.permute(0, 3, 1, 2)  # (B, 2, T, J)
-        x = self.conv_encoder(x)
-        x = x.permute(0, 2, 3, 1)  # (B, T, J, 64)
-        
-        # 重塑并应用注意力
-        x = x.reshape(b, t * j, -1)
-        x, _ = self.attention(x, x, x)
-        
-        # 恢复形状并输出
-        x = x.reshape(b, t, j, -1)
-        x = self.output(x)
-        
-        return x
-
 
 def test_model_memory():
     """测试模型显存占用"""
