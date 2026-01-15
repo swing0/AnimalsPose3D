@@ -12,17 +12,39 @@ KEYPOINT_MAPPING = {
     "Right Eye": ["def_eye_joint.R"],
     "Nose": ["def_c_nose_joint"],
     "Neck": ["def_c_neck1_joint", "def_c_neck2_joint"],
-    "Left Shoulder": ["def_frontLegLwr_joint.L"],
-    "Left Elbow": ["def_frontHorselink_joint.L"],
+    "Left Shoulder": ["def_frontLegLwrHalfTwist_joint.L"],
+    "Left Elbow": ["def_frontHorselinkHalfTwist_joint.L"],
     "Left Front Paw": ["def_frontFoot_joint.L"],
-    "Right Shoulder": ["def_frontLegLwr_joint.R"],
-    "Right Elbow": ["def_frontHorselink_joint.R"],
+    "Right Shoulder": ["def_frontLegLwrHalfTwist_joint.R"],
+    "Right Elbow": ["def_frontHorselinkHalfTwist_joint.R"],
     "Right Front Paw": ["def_frontFoot_joint.R"],
-    "Left Hip": ["def_rearLegLwr_joint.L"],
+    "Left Hip": ["def_rearLegLwrHalfTwist_joint.L"],
     "Left Knee": ["def_rearHorselink_joint.L"],
     "Left Back Paw": ["def_rearFoot_joint.L"],
-    "Right Hip": ["def_rearLegLwr_joint.R"],
+    "Right Hip": ["def_rearLegLwrHalfTwist_joint.R"],
     "Right Knee": ["def_rearHorselink_joint.R"],
+    "Right Back Paw": ["def_rearFoot_joint.R"]
+}
+
+
+
+KEYPOINT_MAPPING2 = {
+    "Root of Tail": ["def_c_tail1_joint"],
+    "Left Eye": ["def_eye_joint.L"],
+    "Right Eye": ["def_eye_joint.R"],
+    "Nose": ["def_c_nose_joint"],
+    "Neck": ["def_c_neck1_joint", "def_c_neck2_joint"],
+    "Left Shoulder": ["def_frontLegUprHalfTwist_joint.L"],
+    "Left Elbow": ["def_frontLegLwrHalfTwist_joint.L"],
+    "Left Front Paw": ["def_frontFoot_joint.L"],
+    "Right Shoulder": ["def_frontLegUprHalfTwist_joint.R"],
+    "Right Elbow": ["def_frontLegLwrHalfTwist_joint.R"],
+    "Right Front Paw": ["def_frontFoot_joint.R"],
+    "Left Hip": ["def_rearLegUprHalfTwist_joint.L"],
+    "Left Knee": ["def_rearLegLwrHalfTwist_joint.L"],
+    "Left Back Paw": ["def_rearFoot_joint.L"],
+    "Right Hip": ["def_rearLegUprHalfTwist_joint.R"],
+    "Right Knee": ["def_rearLegLwrHalfTwist_joint.R"],
     "Right Back Paw": ["def_rearFoot_joint.R"]
 }
 
@@ -37,16 +59,26 @@ MIN_FRAMES = 60  # 最少帧数要求
 def extract_keypoints_from_frame(frame_data):
     """
     从单个帧数据中提取关键点坐标
+    如果KEYPOINT_MAPPING没有匹配上，使用KEYPOINT_MAPPING2作为备用方案
     """
     keypoints = {}
 
     for keypoint_name, joint_names in KEYPOINT_MAPPING.items():
         coordinates = None
 
+        # 首先尝试KEYPOINT_MAPPING
         for joint_name in joint_names:
             if joint_name in frame_data:
                 coordinates = frame_data[joint_name]
                 break
+
+        # 如果KEYPOINT_MAPPING没有匹配上，尝试KEYPOINT_MAPPING2
+        if coordinates is None and keypoint_name in KEYPOINT_MAPPING2:
+            joint_names2 = KEYPOINT_MAPPING2[keypoint_name]
+            for joint_name in joint_names2:
+                if joint_name in frame_data:
+                    coordinates = frame_data[joint_name]
+                    break
 
         if coordinates and len(coordinates) == 3:
             keypoints[keypoint_name] = {

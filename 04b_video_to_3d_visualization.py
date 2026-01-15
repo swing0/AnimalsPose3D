@@ -310,6 +310,11 @@ class VideoTo3DVisualizer:
             scale_3d = scale_2d * 0.5  # 3D尺度约为2D的一半
             frame_3d_scaled = frame_3d * scale_3d
             
+
+            # frame_3d_scaled[:, 0] = -frame_3d_scaled[:, 0]  # 反转X轴
+            # frame_3d_scaled[:, 1] = -frame_3d_scaled[:, 1]
+            frame_3d_scaled[:, 2] = -frame_3d_scaled[:, 2]  # 反转Z轴
+            
             denormalized.append(frame_3d_scaled)
         
         return np.array(denormalized)
