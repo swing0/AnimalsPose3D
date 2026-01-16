@@ -1,513 +1,308 @@
+# 03c_validate_model.py
+# 增强版模型验证可视化工 - 适配合成数据训练模型
+# 功能：
+# 1. 加载 best_synth_model.pt
+# 2. 从 SyntheticAnimalDataset (Mode=Validation) 获取样本
+# 3. 可视化对比: 输入 2D, 预测 3D, 真值 3D
+
 import torch
-import torch.nn as nn
 import numpy as np
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
-import matplotlib.animation as animation
-from matplotlib.widgets import Slider, Button
+from matplotlib.widgets import Button, Slider
 import sys
 import os
 
-# 添加common目录路径
+# 添加路径
 sys.path.append('./common')
 
-# 尝试导入训练时的模型定义
 try:
+    from common.animals_dataset import AnimalsDataset
     from common.transformer_model import UltraLightAnimalPoseTransformer
-    print("✅ 使用训练时的模型定义")
-except ImportError:
-    print("⚠️ 无法导入ultra_light_transformer，使用本地定义")
-    # 使用修复后的模型定义
+    from common.loss import mpjpe
+except ImportError as e:
+    print(f"❌ 导入错误: {e}")
+    sys.exit(1)
 
-# 将骨架按部位分组并定义颜色
-SKELETON_GROUPS = {
-    'trunk': {
-        'edges': [(0, 4), (4, 3), (3, 1), (3, 2)],
-        'color': 'black', 'label': 'Head & Neck'
-    },
-    'front_left': {
-        'edges': [(4, 5), (5, 6), (6, 7)],
-        'color': 'red', 'label': 'Front Left'
-    },
-    'front_right': {
-        'edges': [(4, 8), (8, 9), (9, 10)],
-        'color': 'orange', 'label': 'Front Right'
-    },
-    'back_left': {
-        'edges': [(0, 11), (11, 12), (12, 13)],
-        'color': 'blue', 'label': 'Back Left'
-    },
-    'back_right': {
-        'edges': [(0, 14), (14, 15), (15, 16)],
-        'color': 'cyan', 'label': 'Back Right'
-    }
-}
+# 复用训练脚本中的 Dataset 定义 (为了保证数据处理一致)
+# 这里我们简单复制 SyntheticAnimalDataset 的验证逻辑
+# 或者直接导入 (如果训练脚本是作为模块)。
+# 为了独立性，这里重写简化的验证数据加载逻辑。
 
-# 如果需要，这里提供修复的模型定义
-# 直接使用训练时的模型定义
-from common.transformer_model import UltraLightAnimalPoseTransformer
+SKELETON_EDGES = [
+    (0, 4), (4, 3), (3, 1), (3, 2), (4, 5), (5, 6), (6, 7),
+    (4, 8), (8, 9), (9, 10), (0, 11), (11, 12), (12, 13), 
+    (0, 14), (14, 15), (15, 16)
+]
 
-
-def load_model(checkpoint_path, device):
-    """加载模型"""
-    print("📦 加载模型...")
+def calculate_species_scales(dataset, species_to_id):
+    """计算每种动物的平均骨骼长度作为尺度因子"""
+    species_scales = {}
+    available_animals = dataset.subjects()
     
-    # 加载检查点
-    checkpoint = torch.load(checkpoint_path, map_location=device)
-    
-    # 检查检查点结构
-    if isinstance(checkpoint, dict):
-        print("📋 检测到模型权重")
-        print(f"检查点键: {list(checkpoint.keys())}")
-        
-        # 如果包含模型状态字典
-        if 'model_state_dict' in checkpoint:
-            checkpoint = checkpoint['model_state_dict']
-        elif 'state_dict' in checkpoint:
-            checkpoint = checkpoint['state_dict']
-    
-    # 创建模型 - 使用与训练时相同的参数
-    model = UltraLightAnimalPoseTransformer(
-        num_joints=17,
-        in_dim=2,
-        embed_dim=96,
-        depth=2,
-        num_heads=4,
-        seq_len=16,
-        dropout=0.1
-    ).to(device)
-    
-    # 加载权重
-    model.load_state_dict(checkpoint)
-    
-    # 设置为评估模式
-    model.eval()
-    
-    # 计算参数数量
-    total_params = sum(p.numel() for p in model.parameters())
-    print(f"✅ 模型加载成功，参数数量: {total_params:,}")
-    
-    return model
-
-
-def load_2d_data(data_2d_path, target_subject="Addax_Male", target_action="standtowalk"):
-    """
-    加载2D数据，支持选择动物和动作
-    
-    Args:
-        data_2d_path: 数据文件路径
-        target_subject: 目标动物名称，默认Addax_Male
-        target_action: 目标动作名称，默认standtowalk
-    """
-    print("📂 加载2D数据...")
-    
-    try:
-        data_2d = np.load(data_2d_path, allow_pickle=True)['positions_2d'].item()
-    except Exception as e:
-        print(f"❌ 加载2D数据失败: {e}")
-        return None, None, None
-    
-    # 获取所有可用的动物
-    available_subjects = list(data_2d.keys())
-    print(f"🦓 可用动物: {available_subjects}")
-    
-    # 检查目标动物是否存在
-    if target_subject not in available_subjects:
-        print(f"⚠️  目标动物 '{target_subject}' 不存在，使用第一个动物: {available_subjects[0]}")
-        target_subject = available_subjects[0]
-    
-    # 获取目标动物的所有动作
-    available_actions = list(data_2d[target_subject].keys())
-    print(f"🏃 动物 '{target_subject}' 的可用动作: {available_actions}")
-    
-    # 检查目标动作是否存在
-    if target_action not in available_actions:
-        print(f"⚠️  目标动作 '{target_action}' 不存在，寻找替代动作...")
-        
-        # 寻找具有足够帧数的动作
-        suitable_actions = []
-        for action in available_actions:
-            # 获取该动作的所有视角
-            views = data_2d[target_subject][action]
-            if len(views) > 0:
-                sequence_2d = np.array(views[0])  # 使用第一个视角
-                if len(sequence_2d) >= 16:  # 至少16帧
-                    suitable_actions.append((action, len(sequence_2d)))
-        
-        if not suitable_actions:
-            print("⚠️  没有找到足够长的序列，尝试所有序列")
-            # 尝试所有序列，即使长度不足
-            for action in available_actions:
-                views = data_2d[target_subject][action]
-                if len(views) > 0:
-                    sequence_2d = np.array(views[0])
-                    suitable_actions.append((action, len(sequence_2d)))
-        
-        if not suitable_actions:
-            print("❌ 没有可用的数据序列")
-            return None, None, None
-        
-        # 选择最长的动作
-        target_action, frame_count = max(suitable_actions, key=lambda x: x[1])
-        print(f"✅ 自动选择动作: {target_action} ({frame_count}帧)")
-    
-    # 获取2D序列数据
-    views = data_2d[target_subject][target_action]
-    sequence_2d = np.array(views[0])  # 使用第一个视图
-    
-    print(f"✅ 加载数据: {target_subject} - {target_action}")
-    print(f"   序列长度: {len(sequence_2d)} 帧")
-    print(f"   关节数量: {sequence_2d.shape[1]}")
-    print(f"   数据范围: X [{sequence_2d[:,:,0].min():.3f}, {sequence_2d[:,:,0].max():.3f}]")
-    print(f"             Y [{sequence_2d[:,:,1].min():.3f}, {sequence_2d[:,:,1].max():.3f}]")
-    
-    return sequence_2d, target_subject, target_action
-
-
-def convert_2d_to_3d(model, sequence_2d, device, seq_len=16):
-    """将2D序列转换为3D预测"""
-    print("🔄 进行2D到3D转换...")
-    
-    # 预处理2D数据
-    sequence_2d = sequence_2d.astype(np.float32)
-    
-    total_frames = len(sequence_2d)
-    
-    if total_frames < seq_len:
-        print(f"⚠️  序列长度({total_frames})小于模型要求({seq_len})，进行填充")
-        # 重复最后一帧直到达到seq_len
-        padding = np.repeat(sequence_2d[-1:], seq_len - total_frames, axis=0)
-        sequence_2d = np.concatenate([sequence_2d, padding], axis=0)
-        total_frames = len(sequence_2d)
-    
-    # 如果序列很长，只处理前100帧以避免内存问题
-    max_frames = 100
-    if total_frames > max_frames:
-        print(f"⚠️  序列太长({total_frames}帧)，只处理前{max_frames}帧")
-        sequence_2d = sequence_2d[:max_frames]
-        total_frames = max_frames
-    
-    # 将序列分割为多个子序列
-    num_subsequences = total_frames - seq_len + 1
-    
-    print(f"   处理 {num_subsequences} 个子序列")
-    
-    # 存储预测结果
-    predictions = []
-    
-    with torch.no_grad():
-        for i in range(num_subsequences):
-            # 提取子序列
-            sub_seq = sequence_2d[i:i+seq_len]
+    for animal_name, animal_id in species_to_id.items():
+        if animal_name in available_animals:
+            bone_lengths = []
+            animal_data = dataset[animal_name]
+            for action in animal_data.keys():
+                positions = animal_data[action]['positions']
+                if len(positions) > 0:
+                    for edge in SKELETON_EDGES:
+                        if edge[0] < positions.shape[1] and edge[1] < positions.shape[1]:
+                            bone_vec = positions[:, edge[1]] - positions[:, edge[0]]
+                            bone_len = np.linalg.norm(bone_vec, axis=-1)
+                            bone_lengths.extend(bone_len)
             
-            # 转换为PyTorch张量并添加批次维度
-            input_tensor = torch.from_numpy(sub_seq).unsqueeze(0).to(device)
-            
-            # 模型预测
-            pred_3d = model(input_tensor)
-            
-            # 转换为numpy并移除批次维度
-            pred_3d_np = pred_3d.cpu().numpy()[0]
-            
-            # 第一个子序列：保留所有帧
-            if i == 0:
-                predictions.extend(pred_3d_np[:seq_len-1])
-            
-            # 每个子序列：只保留最后一个帧
-            predictions.append(pred_3d_np[-1])
-    
-    # 转换为完整的3D序列
-    sequence_3d = np.array(predictions)
-    
-    print(f"✅ 转换完成，生成 {len(sequence_3d)} 帧3D数据")
-    print(f"   3D数据范围: X [{sequence_3d[:,:,0].min():.3f}, {sequence_3d[:,:,0].max():.3f}]")
-    print(f"               Y [{sequence_3d[:,:,1].min():.3f}, {sequence_3d[:,:,1].max():.3f}]")
-    print(f"               Z [{sequence_3d[:,:,2].min():.3f}, {sequence_3d[:,:,2].max():.3f}]")
-    
-    return sequence_3d
-
-
-def create_3d_motion_visualization(sequence_3d, subject, action):
-    """创建3D运动可视化"""
-    print("🎨 创建可视化...")
-    
-    # 使用更稳定的后端
-    import matplotlib
-    matplotlib.use('TkAgg')  # 使用TkAgg后端，更稳定
-    
-    fig = plt.figure(figsize=(16, 10))
-    
-    # 创建3D子图
-    ax = fig.add_subplot(111, projection='3d')
-    
-    # 设置初始视图
-    total_frames = len(sequence_3d)
-    
-    # 计算合适的坐标轴范围
-    all_positions = sequence_3d.reshape(-1, 3)
-    
-    if all_positions.shape[0] == 0:
-        print("❌ 没有有效的数据点")
-        return
-    
-    max_range = np.array([
-        all_positions[:, 0].max() - all_positions[:, 0].min(),
-        all_positions[:, 1].max() - all_positions[:, 1].min(),
-        all_positions[:, 2].max() - all_positions[:, 2].min()
-    ]).max() / 2.0
-    
-    if max_range == 0:
-        max_range = 1.0  # 避免除以零
-    
-    mid_x = (all_positions[:, 0].max() + all_positions[:, 0].min()) * 0.5
-    mid_y = (all_positions[:, 1].max() + all_positions[:, 1].min()) * 0.5
-    mid_z = (all_positions[:, 2].max() + all_positions[:, 2].min()) * 0.5
-    
-    ax.set_xlim(mid_x - max_range, mid_x + max_range)
-    ax.set_ylim(mid_y - max_range, mid_y + max_range)
-    ax.set_zlim(mid_z - max_range, mid_z + max_range)
-    
-    # 设置坐标轴标签
-    ax.set_xlabel('X (米)', fontsize=10)
-    ax.set_ylabel('Y (米)', fontsize=10)
-    ax.set_zlabel('Z (米)', fontsize=10)
-    
-    # 设置固定的视角（防止自动旋转）
-    ax.view_init(elev=20., azim=45)
-    
-    # 存储绘图对象
-    scatter_plot = None
-    line_plots = {}
-    
-    def update_frame(frame_idx):
-        """更新当前帧的显示"""
-        nonlocal scatter_plot, line_plots
-        
-        # 清除之前的绘图
-        if scatter_plot is not None:
-            scatter_plot.remove()
-        for line_plot in line_plots.values():
-            line_plot.remove()
-        line_plots.clear()
-        
-        # 获取当前帧数据
-        if frame_idx >= len(sequence_3d):
-            return
-        
-        frame_data = sequence_3d[frame_idx]
-        
-        # 绘制关节点
-        scatter_plot = ax.scatter(
-            frame_data[:, 0], frame_data[:, 1], frame_data[:, 2], 
-            color='darkred', s=30, alpha=0.8, label='Joints'
-        )
-        
-        # 绘制骨骼连接
-        labels_added = set()
-        for group_name, group_info in SKELETON_GROUPS.items():
-            for edge in group_info['edges']:
-                start_joint, end_joint = edge
-                if start_joint < len(frame_data) and end_joint < len(frame_data):
-                    start_pos = frame_data[start_joint]
-                    end_pos = frame_data[end_joint]
-                    
-                    # 检查是否有效点
-                    if not (np.any(np.isnan(start_pos)) or np.any(np.isnan(end_pos))):
-                        line_plot, = ax.plot(
-                            [start_pos[0], end_pos[0]], 
-                            [start_pos[1], end_pos[1]], 
-                            [start_pos[2], end_pos[2]], 
-                            color=group_info['color'], 
-                            linewidth=2, 
-                            label=group_info['label'] if group_name not in labels_added else ""
-                        )
-                        line_plots[f"{group_name}_{edge}"] = line_plot
-                        labels_added.add(group_name)
-        
-        # 设置标题
-        ax.set_title(f'{subject} - {action}\n帧 {frame_idx+1}/{total_frames}', 
-                    fontsize=14, fontweight='bold', pad=20)
-        
-        # 保持固定视角，不自动旋转
-        # ax.view_init(elev=20., azim=45)  # 固定视角
-    
-    # 初始显示
-    update_frame(0)
-    
-    # 添加图例（只添加一次）
-    handles, labels = ax.get_legend_handles_labels()
-    by_label = dict(zip(labels, handles))
-    if by_label:
-        ax.legend(by_label.values(), by_label.keys(), loc='upper left', fontsize=8)
-    
-    # 创建动画
-    ani = animation.FuncAnimation(
-        fig, update_frame, frames=min(total_frames, 200), 
-        interval=100, repeat=True, blit=False
-    )
-    
-    # 添加更稳定的控制面板
-    plt.subplots_adjust(bottom=0.25)
-    
-    # 添加更稳定的滑块控制
-    ax_slider = plt.axes([0.15, 0.1, 0.65, 0.03], facecolor='lightgoldenrodyellow')
-    frame_slider = Slider(ax_slider, '帧', 0, total_frames-1, valinit=0, valstep=1)
-    
-    def update_slider(val):
-        frame_idx = int(frame_slider.val)
-        update_frame(frame_idx)
-        fig.canvas.draw_idle()
-    
-    frame_slider.on_changed(update_slider)
-    
-    # 添加更稳定的播放/暂停按钮
-    ax_play = plt.axes([0.15, 0.05, 0.1, 0.04])
-    play_button = Button(ax_play, '▶ 播放/暂停', color='lightblue', hovercolor='lightcyan')
-    
-    playing = [True]  # 使用列表以便在闭包中修改
-    
-    def toggle_animation(event):
-        if playing[0]:
-            ani.event_source.stop()
-            play_button.label.set_text('▶ 播放')
+            if bone_lengths:
+                species_scales[animal_id] = np.mean(bone_lengths)
+            else:
+                species_scales[animal_id] = 1.0
         else:
-            ani.event_source.start()
-            play_button.label.set_text('⏸ 暂停')
-        playing[0] = not playing[0]
-    
-    play_button.on_clicked(toggle_animation)
-    
-    # 添加重置按钮
-    ax_reset = plt.axes([0.27, 0.05, 0.1, 0.04])
-    reset_button = Button(ax_reset, '↺ 重置', color='lightgreen', hovercolor='lightcyan')
-    
-    def reset_animation(event):
-        frame_slider.set_val(0)
-        update_frame(0)
-        if not playing[0]:
-            ani.event_source.start()
-            play_button.label.set_text('⏸ 暂停')
-            playing[0] = True
-        fig.canvas.draw_idle()
-    
-    reset_button.on_clicked(reset_animation)
-    
-    # 添加保存按钮
-    ax_save = plt.axes([0.39, 0.05, 0.1, 0.04])
-    save_button = Button(ax_save, '💾 保存GIF', color='lightyellow', hovercolor='lightcyan')
-    
-    def save_gif(event):
-        print("💾 保存GIF动画...")
-        try:
-            ani.save('animal_3d_pose.gif', writer='pillow', fps=15, dpi=100)
-            print("✅ GIF保存成功: animal_3d_pose.gif")
-        except Exception as e:
-            print(f"❌ 保存失败: {e}")
-    
-    save_button.on_clicked(save_gif)
-    
-    # 添加视角控制按钮
-    ax_view_front = plt.axes([0.51, 0.05, 0.08, 0.04])
-    view_front_button = Button(ax_view_front, '前视图', color='lightgray', hovercolor='lightcyan')
-    
-    def set_front_view(event):
-        ax.view_init(elev=20., azim=0)
-        fig.canvas.draw_idle()
-    
-    view_front_button.on_clicked(set_front_view)
-    
-    ax_view_side = plt.axes([0.60, 0.05, 0.08, 0.04])
-    view_side_button = Button(ax_view_side, '侧视图', color='lightgray', hovercolor='lightcyan')
-    
-    def set_side_view(event):
-        ax.view_init(elev=20., azim=90)
-        fig.canvas.draw_idle()
-    
-    view_side_button.on_clicked(set_side_view)
-    
-    ax_view_top = plt.axes([0.69, 0.05, 0.08, 0.04])
-    view_top_button = Button(ax_view_top, '顶视图', color='lightgray', hovercolor='lightcyan')
-    
-    def set_top_view(event):
-        ax.view_init(elev=90., azim=0)
-        fig.canvas.draw_idle()
-    
-    view_top_button.on_clicked(set_top_view)
-    
-    # 添加说明文本
-    ax_info = plt.axes([0.15, 0.01, 0.7, 0.03])
-    ax_info.axis('off')
-    ax_info.text(0.5, 0.5, '使用鼠标拖动旋转视角 | 滚轮缩放', 
-                ha='center', va='center', fontsize=10, color='gray')
-    
-    print("🎬 动画已创建，显示窗口中...")
-    print("💡 提示: 使用鼠标拖动旋转视角，滚轮缩放，按钮控制播放")
-    plt.tight_layout()
-    plt.show()
+            species_scales[animal_id] = 1.0
+            
+    return species_scales
 
+def normalize_2d(pose_2d):
+    max_vals = np.max(np.abs(pose_2d), axis=(1, 2), keepdims=True)
+    max_vals[max_vals < 1e-5] = 1.0
+    return pose_2d / max_vals
 
-def main():
-    """主函数"""
-    print("=" * 70)
-    print("🎯 动物3D姿态估计模型验证工具")
-    print("=" * 70)
-    
-    # 配置
-    checkpoint_path = r'checkpoint\best_model.pt'
-    data_2d_path = r'npz\real_npz\data_2d_animals_gt.npz'
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    
-    print(f"🔧 设备: {device}")
-    print(f"📁 模型路径: {checkpoint_path}")
-    print(f"📁 数据路径: {data_2d_path}")
-    
-    # 检查文件是否存在
-    if not os.path.exists(checkpoint_path):
-        print(f"❌ 模型文件不存在: {checkpoint_path}")
-        # 尝试其他可能的位置
-        possible_paths = [
-            'checkpoints_light/best_model.pt',
-            'checkpoint/best_model.pt',
-            'best_model.pt'
-        ]
-        for path in possible_paths:
-            if os.path.exists(path):
-                checkpoint_path = path
-                print(f"✅ 找到模型文件: {path}")
-                break
-    
-    if not os.path.exists(data_2d_path):
-        print(f"❌ 数据文件不存在: {data_2d_path}")
-        return
-    
-    # 1. 加载模型
-    model = load_model(checkpoint_path, device)
-    if model is None:
-        print("❌ 模型加载失败")
-        return
-    
-    # 2. 加载2D数据
-    sequence_2d, subject, action = load_2d_data(data_2d_path,"Addax_Male","fightattack")
-    if sequence_2d is None:
-        print("❌ 2D数据加载失败")
-        return
-    
-    # 3. 转换为3D
-    sequence_3d_pred = convert_2d_to_3d(model, sequence_2d, device)
-    
-    if sequence_3d_pred is None:
-        print("❌ 转换失败")
-        return
-    
-    # 4. 可视化结果
-    print("\n" + "=" * 70)
-    print("🎨 开始可视化...")
-    
-    create_3d_motion_visualization(sequence_3d_pred, subject, action)
-    
-    print("\n✅ 验证完成!")
-    print("=" * 70)
+def batch_compute_similarity_transform_torch(S1, S2):
+    """
+    计算从 S1 到 S2 的刚体变换 (Procrustes Analysis)
+    S1, S2: (B, N, 3)
+    返回: S1_hat (对齐后的 S1)
+    """
+    # 1. 移除质心
+    trans1 = S1.mean(dim=1, keepdim=True)
+    trans2 = S2.mean(dim=1, keepdim=True)
+    S1 = S1 - trans1
+    S2 = S2 - trans2
 
+    # 3. 计算旋转
+    # H = S1^T * S2
+    H = torch.matmul(S1.transpose(1, 2), S2) # (B, 3, 3)
+    
+    U, S, V = torch.svd(H)
+    
+    # R = V * U^T
+    R = torch.matmul(V, U.transpose(1, 2))
+    
+    # 修正反射 (Per-sample check)
+    det = torch.det(R) # (B,)
+    
+    # 构建对角矩阵: [1, 1, sign(det)]
+    diag = torch.ones(S1.shape[0], 3, device=S1.device)
+    diag[:, 2] = torch.sign(det)
+    diag_mat = torch.diag_embed(diag) # (B, 3, 3)
+    
+    # R = V * diag * U^T
+    # 只有当 det < 0 时才需要反转
+    # 但svd返回的矩阵可能包含反射。
+    # 我们这里使用通用的 R = V * diag * U^T
+    R = torch.matmul(torch.matmul(V, diag_mat), U.transpose(1, 2))
+        
+    # 4. 应用变换
+    S1_hat = torch.matmul(S1, R.transpose(1, 2))
+    
+    # 5.为了计算误差，需要把 S1_hat 移回 S2 的位置
+    S1_hat = S1_hat + trans2
+    
+    return S1_hat
 
-if __name__ == "__main__":
-    main()
+class ValidationVisualizer:
+    def __init__(self, model_path, device='cuda'):
+        self.device = device
+        self.model = self.load_model(model_path)
+        self.dataset, self.species_to_id, self.scales = self.load_data()
+        self.val_samples = self.prepare_val_samples()
+        
+        self.current_idx = 0
+        self.fig = None
+        
+    def load_model(self, path):
+        print(f"📦 加载模型: {path}")
+        model = UltraLightAnimalPoseTransformer(
+            num_joints=17, embed_dim=256, depth=4, num_heads=8, seq_len=27, num_species=20
+        ).to(self.device)
+        model.load_state_dict(torch.load(path, map_location=self.device))
+        model.eval()
+        return model
+        
+    def load_data(self):
+        print("📂 加载 3D 数据...")
+        dataset = AnimalsDataset('npz/real_npz/data_3d_animals.npz')
+        all_animals = sorted(dataset.subjects())
+        species_to_id = {name: i for i, name in enumerate(all_animals)}
+        scales = calculate_species_scales(dataset, species_to_id)
+        return dataset, species_to_id, scales
+        
+    def prepare_val_samples(self):
+        print("📥 准备验证样本...")
+        samples = []
+        # 只取前 5 个动物的前 2 个动作，每个取 4 个视角
+        # 避免太多，但这只是为了随机漫游
+        all_seqs = []
+        for animal in self.dataset.subjects():
+            for action in self.dataset[animal].keys():
+                all_seqs.append((animal, action))
+                
+        # 随机取 20 个序列用于验证
+        import random
+        random.seed(42)
+        random.shuffle(all_seqs)
+        selected_seqs = all_seqs[:20]
+        
+        for animal, action in selected_seqs:
+            for view_angle in [0, 90, 180, 270]:
+                samples.append({
+                    'animal': animal,
+                    'action': action,
+                    'view': view_angle
+                })
+        return samples
+
+    def get_sample_data(self, idx):
+        s = self.val_samples[idx]
+        animal, action, view_deg = s['animal'], s['action'], s['view']
+        
+        # 获取 3D
+        pos_3d_raw = self.dataset[animal][action]['positions']
+        # Center crop to 27
+        seq_len = 27
+        if len(pos_3d_raw) >= seq_len:
+            start = (len(pos_3d_raw) - seq_len) // 2
+            pos_3d = pos_3d_raw[start:start+seq_len]
+        else:
+            pad = seq_len - len(pos_3d_raw)
+            pos_3d = np.pad(pos_3d_raw, ((0, pad), (0,0), (0,0)), mode='edge')
+            
+        pos_3d = pos_3d - pos_3d[:, 0:1, :] # Root rel
+        
+        # 旋转 (生成 Input)
+        theta = np.deg2rad(view_deg)
+        c, s_sin = np.cos(theta), np.sin(theta)
+        Ry = np.array([[c, 0, s_sin], [0, 1, 0], [-s_sin, 0, c]], dtype=np.float32)
+        pos_3d_rot = np.matmul(pos_3d, Ry.T)
+        
+        # 投影 2D
+        pos_2d = pos_3d_rot[..., [0, 2]] # X, Z
+        pos_2d_norm = normalize_2d(pos_2d)
+        
+        return {
+            'input_2d': torch.tensor(pos_2d_norm, dtype=torch.float32).unsqueeze(0).to(self.device),
+            'gt_3d': torch.tensor(pos_3d, dtype=torch.float32).unsqueeze(0).to(self.device), # Canonical
+            'gt_3d_rot': torch.tensor(pos_3d_rot, dtype=torch.float32).to(self.device), # Rotated (Camera Space)
+            'species_id': torch.tensor([self.species_to_id[animal]], device=self.device),
+            'meta': s
+        }
+
+    def visualize(self):
+        import matplotlib
+        matplotlib.use('TkAgg')
+        
+        self.fig = plt.figure(figsize=(18, 8))
+        self.ax1 = self.fig.add_subplot(131, title="Input 2D View")
+        self.ax2 = self.fig.add_subplot(132, projection='3d', title="Prediction (Aligned)")
+        self.ax3 = self.fig.add_subplot(133, projection='3d', title="Ground Truth (Canonical)")
+        
+        plt.subplots_adjust(bottom=0.2)
+        
+        self.btn_prev = Button(plt.axes([0.3, 0.05, 0.1, 0.075]), 'Previous')
+        self.btn_next = Button(plt.axes([0.6, 0.05, 0.1, 0.075]), 'Next')
+        
+        self.btn_prev.on_clicked(self.prev_sample)
+        self.btn_next.on_clicked(self.next_sample)
+        
+        self.update_plot()
+        plt.show()
+        
+    def prev_sample(self, event):
+        self.current_idx = (self.current_idx - 1) % len(self.val_samples)
+        self.update_plot()
+        
+    def next_sample(self, event):
+        self.current_idx = (self.current_idx + 1) % len(self.val_samples)
+        self.update_plot()
+        
+    def update_plot(self):
+        data = self.get_sample_data(self.current_idx)
+        
+        # Inference
+        with torch.no_grad():
+            pred_norm = self.model(data['input_2d'], data['species_id'])
+            scale = self.scales[data['species_id'].item()]
+            pred_3d = pred_norm * scale
+            
+        # Post-process for visu (Take 1st frame or middle frame)
+        frame_idx = 13 # Middle
+        
+        p2 = data['input_2d'][0, frame_idx].cpu().numpy()
+        p3_pred = pred_3d[0, frame_idx].cpu().numpy()
+        p3_gt = data['gt_3d'][0, frame_idx].cpu().numpy()
+        p3_gt_rot = data['gt_3d_rot'][frame_idx].cpu().numpy()
+        
+        # Alignment (PA-MPJPE logic for viz)
+        # Align Pred to GT (Canonical) for fair visual comparison
+        # 注意: 模型输出的是 Camera Space (Rotated)，GT 是 Canonical。
+        # 如果我们直接画 Pred，它是歪的（对于 90度视角）。
+        # 为了验证 "Pose" 对不对，我们把 Pred 对齐到 GT。
+        p3_pred_aligned = batch_compute_similarity_transform_torch(
+            torch.tensor(p3_pred).unsqueeze(0), 
+            torch.tensor(p3_gt).unsqueeze(0)
+        ).squeeze(0).numpy()
+        
+        # 1. 2D Input
+        self.ax1.clear()
+        self.ax1.set_title(f"Input 2D (View {data['meta']['view']}°)")
+        self.draw_2d_skeleton(self.ax1, p2)
+        self.ax1.set_aspect('equal')
+        self.ax1.invert_yaxis() # Image coord
+        
+        # 2. Prediction (White) vs GT (Green) [Aligned]
+        self.ax2.clear()
+        self.ax2.set_title(f"Pred (Aligned) vs GT\nAnimal: {data['meta']['animal']}")
+        self.draw_3d_skeleton(self.ax2, p3_gt, 'green', 'GT')
+        self.draw_3d_skeleton(self.ax2, p3_pred_aligned, 'red', 'Pred')
+        self.set_3d_axes(self.ax2, p3_gt)
+        self.ax2.legend()
+        
+        # 3. Raw Prediction (Camera Space)
+        self.ax3.clear()
+        self.ax3.set_title(f"Raw Output (Camera Space)\nShould match View Angle")
+        self.draw_3d_skeleton(self.ax3, p3_pred, 'blue', 'RawPred')
+        # 画一个参照的 Ground Plane 或 Axis 指示方向
+        self.ax3.quiver(0,0,0, 100,0,0, color='r', arrow_length_ratio=0.1) # X
+        self.ax3.quiver(0,0,0, 0,100,0, color='g', arrow_length_ratio=0.1) # Y
+        self.ax3.quiver(0,0,0, 0,0,100, color='b', arrow_length_ratio=0.1) # Z
+        self.set_3d_axes(self.ax3, p3_pred)
+        
+        self.fig.canvas.draw_idle()
+
+    def draw_2d_skeleton(self, ax, pose):
+        for s, e in SKELETON_EDGES:
+            ax.plot([pose[s,0], pose[e,0]], [pose[s,1], pose[e,1]], 'b-')
+        ax.scatter(pose[:,0], pose[:,1], c='r', s=10)
+
+    def draw_3d_skeleton(self, ax, pose, color, label):
+        first = True
+        for s, e in SKELETON_EDGES:
+            ax.plot([pose[s,0], pose[e,0]], [pose[s,1], pose[e,1]], [pose[s,2], pose[e,2]], color=color, label=label if first else "")
+            first = False
+        ax.scatter(pose[:,0], pose[:,1], pose[:,2], c=color, s=10)
+        
+    def set_3d_axes(self, ax, pose):
+        limit = np.max(np.abs(pose)) * 1.5
+        ax.set_xlim(-limit, limit)
+        ax.set_ylim(-limit, limit)
+        ax.set_zlim(-limit, limit)
+        ax.set_xlabel('X')
+        ax.set_ylabel('Y')
+        ax.set_zlabel('Z')
+
+if __name__ == '__main__':
+    checkpoint = 'checkpoints_enhanced/best_synth_model.pt'
+    if not os.path.exists(checkpoint):
+        print(f"❌ 找不到模型: {checkpoint}")
+    else:
+        viz = ValidationVisualizer(checkpoint)
+        viz.visualize()
