@@ -17,7 +17,7 @@ sys.path.append('./common')
 
 try:
     from common.animals_dataset import AnimalsDataset
-    from common.transformer_model import UltraLightAnimalPoseTransformer
+    from common.transformer_model import AnimalPoseTransformer
     from common.loss import mpjpe
 except ImportError as e:
     print(f"❌ 导入错误: {e}")
@@ -121,7 +121,7 @@ class ValidationVisualizer:
         
     def load_model(self, path):
         print(f"📦 加载模型: {path}")
-        model = UltraLightAnimalPoseTransformer(
+        model = AnimalPoseTransformer(
             num_joints=17, embed_dim=256, depth=4, num_heads=8, seq_len=27, num_species=20
         ).to(self.device)
         model.load_state_dict(torch.load(path, map_location=self.device))

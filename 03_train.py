@@ -20,8 +20,8 @@ sys.path.append('./common')
 # 导入本地模块
 try:
     from common.animals_dataset import AnimalsDataset
-    from common.loss import mpjpe
-    from common.transformer_model import UltraLightAnimalPoseTransformer
+    from common.loss import mpjpe, compute_bone_loss, compute_symmetry_loss
+    from common.transformer_model import AnimalPoseTransformer
 except ImportError as e:
     print(f"❌ 导入错误: {e}")
     sys.exit(1)
@@ -278,7 +278,7 @@ def train():
     val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=0)
     
     # 5. 模型
-    model = UltraLightAnimalPoseTransformer(
+    model = AnimalPoseTransformer(
         num_joints=17, embed_dim=EMBED_DIM, depth=DEPTH, 
         num_heads=HEADS, seq_len=SEQ_LEN, num_species=num_species
     ).to(device)
@@ -305,7 +305,17 @@ def train():
             target_norm = batch_3d / batch_scales
             
             pred_norm = model(batch_2d, batch_species)
-            loss = mpjpe(pred_norm, target_norm)
+            
+            # 计算多种损失
+            loss_mpjpe = mpjpe(pred_norm, target_norm)
+            
+            # 新增解剖学约束损失
+            pred_3d = pred_norm * batch_scales
+            loss_bone = compute_bone_loss(pred_3d, batch_3d, SKELETON_EDGES)
+            loss_sym = compute_symmetry_loss(pred_3d)
+            
+            # 组合损失（根据您的建议调整权重）
+            loss = loss_mpjpe + 0.5 * loss_bone + 0.1 * loss_sym
             
             optimizer.zero_grad()
             loss.backward()

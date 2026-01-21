@@ -87,3 +87,82 @@ def mean_velocity_error(predicted, target):
     velocity_target = np.diff(target, axis=0)
     
     return np.mean(np.linalg.norm(velocity_predicted - velocity_target, axis=len(target.shape)-1))
+
+def compute_bone_loss(predicted, target, skeleton_edges):
+    """
+    骨骼长度损失：强制预测的骨骼长度与真值一致
+    predicted, target: (B, T, J, 3)
+    skeleton_edges: 骨架连接边列表
+    """
+    assert predicted.shape == target.shape
+    
+    loss = 0
+    valid_edges = 0
+    
+    for edge in skeleton_edges:
+        p1, p2 = edge
+        if p2 >= predicted.shape[2]: 
+            continue
+        
+        pred_bone = torch.norm(predicted[:, :, p1] - predicted[:, :, p2], dim=-1)
+        gt_bone = torch.norm(target[:, :, p1] - target[:, :, p2], dim=-1)
+        
+        # 使用MSE损失，对异常值更敏感
+        loss += torch.nn.functional.mse_loss(pred_bone, gt_bone)
+        valid_edges += 1
+    
+    return loss / valid_edges if valid_edges > 0 else torch.tensor(0.0)
+
+def compute_symmetry_loss(predicted):
+    """
+    对称性约束：防止左右肢体塌陷到同一侧
+    假设：左侧关节索引为 L, 右侧为 R
+    惩罚左右关节在3D空间中靠得太近
+    """
+    # AP10K关键点定义：左侧关节 [1, 2, 5, 6, 7, 11, 12, 13]
+    # 右侧关节 [3, 4, 8, 9, 10, 14, 15, 16]
+    left_joints = [1, 2, 5, 6, 7, 11, 12, 13]
+    right_joints = [3, 4, 8, 9, 10, 14, 15, 16]
+    
+    # 检查索引有效性
+    max_joint = predicted.shape[2]
+    valid_left = [j for j in left_joints if j < max_joint]
+    valid_right = [j for j in right_joints if j < max_joint]
+    
+    if not valid_left or not valid_right:
+        return torch.tensor(0.0)
+    
+    # 惩罚左右对称点在3D空间中靠得太近
+    left_pos = predicted[:, :, valid_left]
+    right_pos = predicted[:, :, valid_right]
+    
+    # 计算所有左右关节对之间的最小距离
+    batch_size, seq_len, num_left, _ = left_pos.shape
+    _, _, num_right, _ = right_pos.shape
+    
+    # 重塑为 (B*T, num_left, 3) 和 (B*T, num_right, 3)
+    left_flat = left_pos.reshape(-1, num_left, 3)
+    right_flat = right_pos.reshape(-1, num_right, 3)
+    
+    # 计算所有左右关节对之间的距离矩阵
+    dist_matrix = torch.cdist(left_flat, right_flat)  # (B*T, num_left, num_right)
+    
+    # 取每对左右关节的最小距离
+    min_dist = torch.min(dist_matrix, dim=2)[0]  # (B*T, num_left)
+    min_dist = min_dist.reshape(batch_size, seq_len, num_left)
+    
+    # 如果距离小于阈值（0.1米），则产生惩罚
+    threshold = 0.1
+    penalty = torch.nn.functional.relu(threshold - min_dist)
+    
+    return torch.mean(penalty)
+
+def compute_anatomy_loss(predicted, target, skeleton_edges):
+    """
+    综合解剖学约束损失
+    结合骨骼长度损失和对称性损失
+    """
+    bone_loss = compute_bone_loss(predicted, target, skeleton_edges)
+    sym_loss = compute_symmetry_loss(predicted)
+    
+    return bone_loss, sym_loss

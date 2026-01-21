@@ -18,7 +18,7 @@ sys.path.append('./common')
 try:
     from common.ap10k_detector import AP10KAnimalPoseDetector
     from common.keypoint_mapper import KeypointMapper
-    from common.transformer_model import UltraLightAnimalPoseTransformer
+    from common.transformer_model import AnimalPoseTransformer
 except ImportError as e:
     print(f"❌ 导入错误: {e}")
     sys.exit(1)
@@ -57,7 +57,7 @@ class VideoTo3DVisualizer:
     def load_3d_model(self, checkpoint_path):
         print(f"📥 加载3D模型: {checkpoint_path}")
         # 参数必须与 03c_train_enhanced.py 一致
-        model = UltraLightAnimalPoseTransformer(
+        model = AnimalPoseTransformer(
             num_joints=17, 
             embed_dim=256, 
             depth=4, 
@@ -330,7 +330,7 @@ class VideoTo3DVisualizer:
 def main():
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('--video', type=str, default='video/test_video_yang.mp4', help='Path to video')
+    parser.add_argument('--video', type=str, default='video/luotuo.mp4', help='Path to video')
     parser.add_argument('--species_id', type=int, default=0, help='Species ID (0-19)')
     args = parser.parse_args()
     

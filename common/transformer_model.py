@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-class UltraLightAnimalPoseTransformer(nn.Module):
+class AnimalPoseTransformer(nn.Module):
     """
     增强版动物姿态Transformer - 专为8GB显存优化但性能更强
     关键改进：
@@ -43,7 +43,25 @@ class UltraLightAnimalPoseTransformer(nn.Module):
         
         # 3. 位置编码 (学习式)
         self.time_pos_embed = nn.Parameter(torch.randn(1, seq_len, 1, embed_dim) * 0.02)
-        self.joint_pos_embed = nn.Parameter(torch.randn(1, 1, num_joints, embed_dim) * 0.02)
+        
+        # 增强位置编码：为左右关节注入不同的偏置值
+        joint_pos_embed = torch.randn(1, 1, num_joints, embed_dim) * 0.02
+        
+        # AP10K关键点定义：左侧关节 [1, 2, 5, 6, 7, 11, 12, 13]
+        # 右侧关节 [3, 4, 8, 9, 10, 14, 15, 16]
+        left_joints = [1, 2, 5, 6, 7, 11, 12, 13]
+        right_joints = [3, 4, 8, 9, 10, 14, 15, 16]
+        
+        # 为左侧关节添加正偏置，右侧关节添加负偏置
+        for j in left_joints:
+            if j < num_joints:
+                joint_pos_embed[0, 0, j, :] += 0.1  # 左侧偏置
+        
+        for j in right_joints:
+            if j < num_joints:
+                joint_pos_embed[0, 0, j, :] -= 0.1  # 右侧偏置
+        
+        self.joint_pos_embed = nn.Parameter(joint_pos_embed)
         
         # 4. 增强Transformer编码器 (4层)
         self.transformer_layers = nn.ModuleList([
@@ -156,7 +174,7 @@ def test_model_memory():
             
             try:
                 # 创建模型
-                model = UltraLightAnimalPoseTransformer(
+                model = AnimalPoseTransformer(
                     num_joints=17,
                     embed_dim=96,
                     seq_len=seq_len
