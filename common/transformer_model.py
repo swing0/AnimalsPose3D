@@ -8,14 +8,13 @@ class AnimalPoseTransformer(nn.Module):
     增强版动物姿态Transformer - 专为8GB显存优化但性能更强
     关键改进：
     1. 增加模型容量 (embed_dim=256, depth=4)
-    2. 引入物种条件 (Species Conditioning)
+    2. 从2D关键点自动提取形态特征 (无需物种ID)
     3. 支持更长的序列 (seq_len=27)
     4. 优化损失函数
     """
     
     def __init__(self, num_joints=17, in_dim=2, embed_dim=256, 
-                 depth=4, num_heads=8, seq_len=27, dropout=0.1, 
-                 num_species=20):
+                 depth=4, num_heads=8, seq_len=27, dropout=0.1):
         """
         参数：
             num_joints: 关节数量 (默认17)
@@ -25,7 +24,6 @@ class AnimalPoseTransformer(nn.Module):
             num_heads: 注意力头数 (增加到8)
             seq_len: 序列长度 (增加到27)
             dropout: Dropout率
-            num_species: 物种数量 (默认20)
         """
         super().__init__()
         
@@ -33,10 +31,15 @@ class AnimalPoseTransformer(nn.Module):
         self.num_joints = num_joints
         self.seq_len = seq_len
         self.embed_dim = embed_dim
-        self.num_species = num_species
+        self.in_dim = in_dim
         
-        # 1. 物种条件嵌入
-        self.species_embed = nn.Embedding(num_species, embed_dim)
+        # 1. 从2D关键点提取全局形态特征
+        # 这将自动学习物种特定的形态特征（体型比例、肢体长度等）
+        self.pose_feature_extractor = nn.Sequential(
+            nn.Linear(num_joints * in_dim, embed_dim),
+            nn.ReLU(),
+            nn.Linear(embed_dim, embed_dim)
+        )
         
         # 2. 关节特征嵌入
         self.joint_embed = nn.Linear(in_dim, embed_dim)
@@ -85,7 +88,7 @@ class AnimalPoseTransformer(nn.Module):
         print(f"  嵌入维度: {embed_dim}")
         print(f"  层数: {depth}")
         print(f"  注意力头: {num_heads}")
-        print(f"  物种数量: {num_species}")
+        print(f"  特征提取: 从2D关键点自动学习")
     
     def _create_transformer_layer(self, embed_dim, num_heads, dropout):
         """创建轻量Transformer层"""
@@ -110,12 +113,11 @@ class AnimalPoseTransformer(nn.Module):
         
         # 位置编码已随机初始化
     
-    def forward(self, x, species_ids=None):
+    def forward(self, x):
         """
         前向传播
         输入: 
             x: (B, T, J, 2) - 2D关节点坐标
-            species_ids: (B,) - 物种ID (可选)
         输出: (B, T, J, 3) - 3D关节点坐标
         """
         batch_size, seq_len, num_joints, _ = x.shape
@@ -124,14 +126,18 @@ class AnimalPoseTransformer(nn.Module):
         if seq_len > self.seq_len:
             raise ValueError(f"输入序列长度{seq_len}超过模型最大长度{self.seq_len}")
         
+        # 保存原始输入用于特征提取
+        x_input = x.clone()
+        
         # 1. 关节特征嵌入
         x = self.joint_embed(x)  # (B, T, J, D)
         
-        # 2. 添加物种条件 (如果提供)
-        if species_ids is not None:
-            species_emb = self.species_embed(species_ids)  # (B, D)
-            species_emb = species_emb.unsqueeze(1).unsqueeze(2)  # (B, 1, 1, D)
-            x = x + species_emb
+        # 2. 从2D关键点提取全局形态特征
+        # 对时间维度取平均以获得稳定的姿态表示
+        x_flat = x_input.view(batch_size, seq_len, -1)  # (B, T, J*2)
+        pose_feat = self.pose_feature_extractor(x_flat.mean(dim=1))  # (B, D)
+        pose_feat = pose_feat.unsqueeze(1).unsqueeze(2)  # (B, 1, 1, D)
+        x = x + pose_feat  # 添加到关节嵌入中
         
         # 3. 添加位置编码 (广播)
         x = x + self.time_pos_embed[:, :seq_len, :, :]

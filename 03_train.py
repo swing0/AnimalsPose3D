@@ -280,7 +280,7 @@ def train():
     # 5. 模型
     model = AnimalPoseTransformer(
         num_joints=17, embed_dim=EMBED_DIM, depth=DEPTH, 
-        num_heads=HEADS, seq_len=SEQ_LEN, num_species=num_species
+        num_heads=HEADS, seq_len=SEQ_LEN
     ).to(device)
     
     optimizer = optim.AdamW(model.parameters(), lr=LR, weight_decay=0.01)
@@ -304,7 +304,7 @@ def train():
             # Target Normalization
             target_norm = batch_3d / batch_scales
             
-            pred_norm = model(batch_2d, batch_species)
+            pred_norm = model(batch_2d)
             
             # 计算多种损失
             loss_mpjpe = mpjpe(pred_norm, target_norm)
@@ -345,7 +345,7 @@ def train():
                 
                 batch_scales = torch.tensor([scales_dict[s.item()] for s in batch_species], device=device).view(-1,1,1,1)
                 
-                pred_norm = model(batch_2d, batch_species)
+                pred_norm = model(batch_2d)
                 pred_3d = pred_norm * batch_scales
                 
                 # Raw MPJPE

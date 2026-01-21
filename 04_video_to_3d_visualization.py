@@ -38,11 +38,10 @@ SKELETON_COLORS_2D = {
 }
 
 class VideoTo3DVisualizer:
-    def __init__(self, model_checkpoint, onnx_model_path, target_species_id=0):
+    def __init__(self, model_checkpoint, onnx_model_path):
         print("🎯 初始化视频到3D可视化器...")
         self.detector = AP10KAnimalPoseDetector(onnx_model_path)
         self.mapper = KeypointMapper()
-        self.target_species_id = target_species_id
         
         # Load Model
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -62,8 +61,7 @@ class VideoTo3DVisualizer:
             embed_dim=256, 
             depth=4, 
             num_heads=8, 
-            seq_len=27, 
-            num_species=20
+            seq_len=27
         ).to(self.device)
         
         if not os.path.exists(checkpoint_path):
@@ -207,11 +205,8 @@ class VideoTo3DVisualizer:
             for batch_np in tqdm(input_batches, desc="3D 推理"):
                 batch_tensor = torch.tensor(batch_np, dtype=torch.float32).to(self.device)
                 
-                # Species ID
-                species = torch.full((batch_tensor.shape[0],), self.target_species_id, dtype=torch.long).to(self.device)
-                
                 # Forward
-                pred_norm = self.model_3d(batch_tensor, species) # (B, 27, 17, 3)
+                pred_norm = self.model_3d(batch_tensor)  # (B, 27, 17, 3)
                 
                 # 取中间帧还是最后一帧？
                 # 训练时可以取序列。
@@ -330,8 +325,7 @@ class VideoTo3DVisualizer:
 def main():
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('--video', type=str, default='video/luotuo.mp4', help='Path to video')
-    parser.add_argument('--species_id', type=int, default=0, help='Species ID (0-19)')
+    parser.add_argument('--video', type=str, default='video/test_video_yang.mp4', help='Path to video')
     args = parser.parse_args()
     
     checkpoint = 'checkpoints/best_synth_model.pt'
@@ -346,7 +340,7 @@ def main():
                 args.video = os.path.join("video", vids[0])
                 print(f"Using found video: {args.video}")
     
-    viz = VideoTo3DVisualizer(checkpoint, onnx_path, target_species_id=args.species_id)
+    viz = VideoTo3DVisualizer(checkpoint, onnx_path)
     if viz.model_3d:
         viz.visualize_combined(args.video)
 
