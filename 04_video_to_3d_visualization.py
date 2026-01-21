@@ -334,7 +334,7 @@ def main():
     parser.add_argument('--species_id', type=int, default=0, help='Species ID (0-19)')
     args = parser.parse_args()
     
-    checkpoint = 'checkpoints_enhanced/best_synth_model.pt'
+    checkpoint = 'checkpoints/best_synth_model.pt'
     onnx_path = 'model/ap10k/end2end.onnx'
     
     if not os.path.exists(args.video):

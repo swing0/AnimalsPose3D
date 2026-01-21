@@ -300,7 +300,7 @@ class ValidationVisualizer:
         ax.set_zlabel('Z')
 
 if __name__ == '__main__':
-    checkpoint = 'checkpoints_enhanced/best_synth_model.pt'
+    checkpoint = 'checkpoints/best_synth_model.pt'
     if not os.path.exists(checkpoint):
         print(f"❌ 找不到模型: {checkpoint}")
     else:

@@ -378,7 +378,7 @@ def train():
         
         if avg_val_pa_mpjpe < best_val_loss:
             best_val_loss = avg_val_pa_mpjpe
-            torch.save(model.state_dict(), 'checkpoints_enhanced/best_synth_model.pt')
+            torch.save(model.state_dict(), 'checkpoints/best_synth_model.pt')
             print(f"💾 Saved Best Model ({best_val_loss:.2f}mm)")
             with open("training_log.txt", "a", encoding="utf-8") as f:
                 f.write(f"💾 Saved Best Model ({best_val_loss:.2f}mm)\n")
