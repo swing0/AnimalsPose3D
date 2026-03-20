@@ -258,6 +258,9 @@ class VideoTo3DVisualizer:
         scatter_3d = None
         lines_3d = []
         
+        # 暂停状态
+        self.paused = False
+        
         # Axis limits
         valid_3d = [p for p in self.keypoints_3d_sequence if not np.any(np.isnan(p))]
         if valid_3d:
@@ -269,8 +272,28 @@ class VideoTo3DVisualizer:
         
         ax_3d.view_init(elev=20, azim=45)
         
+        # 添加暂停按钮
+        ax_pause = plt.axes([0.45, 0.02, 0.1, 0.04])
+        btn_pause = Button(ax_pause, 'pause', color='lightblue', hovercolor='0.975')
+        
+        def toggle_pause(event):
+            self.paused = not self.paused
+            if self.paused:
+                btn_pause.label.set_text('continue')
+                btn_pause.color = 'lightcoral'
+            else:
+                btn_pause.label.set_text('pause')
+                btn_pause.color = 'lightblue'
+            plt.draw()
+        
+        btn_pause.on_clicked(toggle_pause)
+        
         def update(frame_idx):
             nonlocal img_plot, scatter_3d, lines_3d
+            
+            # 如果暂停，保持当前帧不变
+            if self.paused:
+                return img_plot, scatter_3d, *lines_3d
             
             # 2D
             if frame_idx < len(self.video_frames):
@@ -315,7 +338,9 @@ class VideoTo3DVisualizer:
                                  color=info['color']
                              )[0])
                              
-            ax_2d.set_title(f"Frame {frame_idx}")
+            ax_2d.set_title(f"Frame {frame_idx} {'(暂停)' if self.paused else ''}")
+            
+            return img_plot, scatter_3d, *lines_3d
 
         total_frames = len(self.video_frames)
         ani = animation.FuncAnimation(fig, update, frames=total_frames, interval=50)
@@ -325,7 +350,7 @@ class VideoTo3DVisualizer:
 def main():
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('--video', type=str, default='video/test_video_yang.mp4', help='Path to video')
+    parser.add_argument('--video', type=str, default='video/giraffe.mp4', help='Path to video')
     args = parser.parse_args()
     
     checkpoint = 'checkpoints/best_synth_model.pt'

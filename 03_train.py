@@ -315,7 +315,7 @@ def train():
             loss_sym = compute_symmetry_loss(pred_3d)
             
             # 组合损失（根据您的建议调整权重）
-            loss = loss_mpjpe + 0.5 * loss_bone + 0.1 * loss_sym
+            loss = loss_mpjpe + 0.5 * loss_bone + 0.1 * loss_sym  # 消融3：解剖学损失函数 (Anatomical Losses)
             
             optimizer.zero_grad()
             loss.backward()

@@ -58,11 +58,11 @@ class AnimalPoseTransformer(nn.Module):
         # 为左侧关节添加正偏置，右侧关节添加负偏置
         for j in left_joints:
             if j < num_joints:
-                joint_pos_embed[0, 0, j, :] += 0.1  # 左侧偏置
+                joint_pos_embed[0, 0, j, :] += 0.1  # 左侧偏置  消融2：no Asym. PE
         
         for j in right_joints:
             if j < num_joints:
-                joint_pos_embed[0, 0, j, :] -= 0.1  # 右侧偏置
+                joint_pos_embed[0, 0, j, :] -= 0.1  # 右侧偏置  消融2：no Asym. PE
         
         self.joint_pos_embed = nn.Parameter(joint_pos_embed)
         
@@ -137,7 +137,7 @@ class AnimalPoseTransformer(nn.Module):
         x_flat = x_input.view(batch_size, seq_len, -1)  # (B, T, J*2)
         pose_feat = self.pose_feature_extractor(x_flat.mean(dim=1))  # (B, D)
         pose_feat = pose_feat.unsqueeze(1).unsqueeze(2)  # (B, 1, 1, D)
-        x = x + pose_feat  # 添加到关节嵌入中
+        x = x + pose_feat  # 添加到关节嵌入中  消融1： no LME 模块 (Morphology Awareness)
         
         # 3. 添加位置编码 (广播)
         x = x + self.time_pos_embed[:, :seq_len, :, :]
