@@ -339,7 +339,7 @@ class AP10KAnimalPoseDetector:
 # 使用示例
 def main():
     # 初始化检测器
-    detector = AP10KAnimalPoseDetector("../model/ap10k/end2end.onnx")
+    detector = AP10KAnimalPoseDetector("model/ap10k/end2end.onnx")
 
     # 检测图像
     image_path = "addax.png"  # 替换为您的图像路径

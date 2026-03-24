@@ -1,5 +1,5 @@
-# 04b_video_to_3d_visualization.py
-# 视频到3D关键点的可视化工具 - 适配最佳合成模型 (Best Synth Model)
+# 17_video_to_3d_visualization_animal_poseformer.py
+# 视频到3D关键点的可视化工具 - 适配 AnimalPoseFormer 模型
 
 import os
 import cv2
@@ -18,7 +18,7 @@ sys.path.append('./common')
 try:
     from common.ap10k_detector import AP10KAnimalPoseDetector
     from common.keypoint_mapper import KeypointMapper
-    from common.transformer_model import AnimalPoseTransformer
+    from common.animal_poseformer import AnimalPoseFormer
 except ImportError as e:
     print(f"❌ 导入错误: {e}")
     sys.exit(1)
@@ -55,13 +55,20 @@ class VideoTo3DVisualizer:
     
     def load_3d_model(self, checkpoint_path):
         print(f"📥 加载3D模型: {checkpoint_path}")
-        # 参数必须与 03c_train_enhanced.py 一致
-        model = AnimalPoseTransformer(
+        # 参数必须与 16_train_animal_poseformer.py 一致
+        model = AnimalPoseFormer(
+            num_frame=27, 
             num_joints=17, 
-            embed_dim=256, 
-            depth=4, 
+            in_chans=2, 
+            embed_dim_ratio=32, 
+            depth=4,
             num_heads=8, 
-            seq_len=27
+            mlp_ratio=2., 
+            qkv_bias=True, 
+            qk_scale=None,
+            drop_rate=0., 
+            attn_drop_rate=0., 
+            drop_path_rate=0.2
         ).to(self.device)
         
         if not os.path.exists(checkpoint_path):
@@ -120,7 +127,7 @@ class VideoTo3DVisualizer:
 
     def normalize_root_relative(self, kps_seq):
         """
-        归一化逻辑 (与 SyntheticAnimalDataset 训练时一致):
+        归一化逻辑:
         1. Root Relative (减去根节点)
         2. Scale Normalization (除以最大绝对值)
         """
@@ -163,9 +170,6 @@ class VideoTo3DVisualizer:
         seq_len = 27
         
         # 滑动窗口处理
-        # 为简单起见，我们逐帧滑动，或者分块
-        # 这里使用简单的 padding 策略
-        
         num_frames = len(kps_norm_arr)
         
         # Pad beginning
@@ -177,20 +181,12 @@ class VideoTo3DVisualizer:
         
         # 准备 batch
         input_batches = []
-        indices = []
         
         current_batch = []
         
         for i in range(num_frames):
-            # 取窗口 [i : i+seq_len]
-            # 对应的输出应该是中间帧，或者最后一帧？
-            # 训练是 seq -> all joints 3d.
-            # 为了平滑，我们通常取 centered window.
-            # padding 之后，第 i 帧 对应 window [i : i+seq_len] (centered at i + pad_len)
-            
             window = padded_input[i : i+seq_len]
             if np.any(np.isnan(window)):
-                # 如果窗口内有 NaN，这一帧可能不准，但还是得预测
                 # fill nan with 0
                 window = np.nan_to_num(window, 0.0)
                 
@@ -206,31 +202,22 @@ class VideoTo3DVisualizer:
                 batch_tensor = torch.tensor(batch_np, dtype=torch.float32).to(self.device)
                 
                 # Forward
-                pred_norm = self.model_3d(batch_tensor)  # (B, 27, 17, 3)
+                pred_norm = self.model_3d(batch_tensor)  # (B, 1, 17, 3) 对于 PoseFormer
                 
-                # 取中间帧还是最后一帧？
-                # 训练时可以取序列。
-                # Transformer 输出也是序列 (B, T, J, 3)
-                # 我们取中间帧 pad_len
-                pred_frame = pred_norm[:, seq_len // 2, :, :] # (B, 17, 3)
+                # 取第0帧因为网络将整个27帧序列压缩并仅输出中心帧
+                pred_frame = pred_norm[:, 0, :, :] # (B, 17, 3)
                 
                 all_preds.append(pred_frame.cpu().numpy())
                 
         all_preds = np.concatenate(all_preds, axis=0) # (N, 17, 3)
         
         # 反归一化 (仅 Scale，因为是 Root Relative 的 3D)
-        # 3D 预测也是 Root Relative 的
-        # 我们给它乘以一个系数，让它看起来大一点
-        # 或者乘以原始 2D 的 scale
-        
         for i, pred_3d_norm in enumerate(all_preds):
             scale = scales[i] if i < len(scales) else 100.0
             if scale == 1.0: scale = 100.0 # Default if unknown
             
             # 乘以 Scale 还原物理大小 (Approx)
-            # 这里的 Scale 是 2D pixel scale。
-            # 直接用它会让 3D 看起来和 2D 像素空间对应。
-            pred_3d = pred_3d_norm * scale * 2.0 # 2.0 是经验系数 (Z-depth usually larger)
+            pred_3d = pred_3d_norm * scale * 2.0 # 2.0 是经验系数
             
             self.keypoints_3d_sequence.append(pred_3d)
             
@@ -251,7 +238,7 @@ class VideoTo3DVisualizer:
         
         ax_2d.axis('off')
         ax_2d.set_title("Input Video")
-        ax_3d.set_title("3D Reconstruction")
+        ax_3d.set_title("3D Reconstruction (AnimalPoseFormer)")
         
         # Plot objects
         img_plot = None
@@ -324,9 +311,6 @@ class VideoTo3DVisualizer:
                 lines_3d = []
                 
                 if not np.any(np.isnan(pose)):
-                    # Rotate for better view (Optional)
-                    # pose = pose @ R_x(np.pi/2) ...
-                    
                     scatter_3d = ax_3d.scatter(pose[:,0], pose[:,1], pose[:,2], c='r', s=20)
                     
                     for group_name, info in SKELETON_GROUPS.items():
@@ -353,14 +337,15 @@ def main():
     parser.add_argument('--video', type=str, default='video/giraffe.mp4', help='Path to video')
     args = parser.parse_args()
     
-    checkpoint = 'checkpoints/best_synth_model.pt'
+    # 默认加载 16_train_animal_poseformer.py 训练出来的最佳模型
+    checkpoint = 'checkpoints/animal_poseformer_best_model.pt'
     onnx_path = 'model/ap10k/end2end.onnx'
     
     if not os.path.exists(args.video):
         print(f"Please provide valid video path. {args.video} not found.")
         # Try finding a video
         if os.path.exists("video"):
-            vids = os.listdir("video")
+            vids = [v for v in os.listdir("video") if v.endswith(".mp4")]
             if vids:
                 args.video = os.path.join("video", vids[0])
                 print(f"Using found video: {args.video}")
