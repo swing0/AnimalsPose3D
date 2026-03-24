@@ -149,8 +149,8 @@ class SyntheticAnimalDataset(Dataset):
             phi = 0.0
 
         c, s = np.cos(theta), np.sin(theta)
-        Ry = np.array([[c, 0, s], [0, 1, 0], [-s, 0, c]], dtype=np.float32)
-        pos_3d_rotated = np.matmul(pos_3d, Ry.T)
+        Rz = np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]], dtype=np.float32)
+        pos_3d_rotated = np.matmul(pos_3d, Rz.T)
         pos_2d = pos_3d_rotated[..., [0, 2]] 
         
         pos_2d_norm = normalize_2d(pos_2d)

@@ -334,7 +334,7 @@ class VideoTo3DVisualizer:
 def main():
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('--video', type=str, default='video/giraffe.mp4', help='Path to video')
+    parser.add_argument('--video', type=str, default='video/goat.mp4', help='Path to video')
     args = parser.parse_args()
     
     # 默认加载 16_train_animal_poseformer.py 训练出来的最佳模型
