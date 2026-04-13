@@ -96,7 +96,10 @@ def main():
         qk_scale=None,
         drop_rate=0., 
         attn_drop_rate=0., 
-        drop_path_rate=0.2
+        drop_path_rate=0.2,
+        use_lme=True,
+        num_frame_kept=seq_len,
+        num_coeff_kept=seq_len
     ).to(device)
     
     if os.path.exists(checkpoint_path):
