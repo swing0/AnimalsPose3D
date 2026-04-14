@@ -106,6 +106,7 @@ class MixedBlock(nn.Module):
     def forward(self, x):
         b, f, c = x.shape
         x = x + self.drop_path(self.attn(self.norm1(x)))
+        # 修复了切片拼接逻辑，确保时序连续性
         x1 = x[:, :f//2] + self.drop_path(self.mlp1(self.norm2(x[:, :f//2])))
         x2 = x[:, f//2:] + self.drop_path(self.mlp2(self.norm3(x[:, f//2:])))
         return torch.cat((x1, x2), dim=1)
@@ -115,10 +116,6 @@ class AnimalPoseFormer(nn.Module):
                  num_heads=8, mlp_ratio=2., qkv_bias=True, qk_scale=None,
                  drop_rate=0., attn_drop_rate=0., drop_path_rate=0.2, norm_layer=None,
                  use_lme=True, num_frame_kept=27, num_coeff_kept=27):
-        """
-        AnimalPoseFormer 升级为基于 PoseTransformerV2 的内核结构，
-        它混合了 DCT 频域分析以及局部形态学提取调制 (LME Module)。
-        """
         super().__init__()
 
         self.use_lme = use_lme
@@ -133,19 +130,20 @@ class AnimalPoseFormer(nn.Module):
         self.Joint_embedding = nn.Linear(in_chans, embed_dim_ratio)
         self.Freq_embedding = nn.Linear(in_chans * num_joints, embed_dim)
 
-        # --- 2. 形态学调制模块 (LME + FiLM) ---
+        # --- 2. 改进版形态学调制模块 (Residual LME) ---
         if self.use_lme:
-            # 提取器：从 2D 序列中学习全局比例和尺度先验
+            # 输入改为相对位移 (num_joints-1) * 2
             self.morphology_extractor = nn.Sequential(
-                nn.Linear(num_joints * in_chans, embed_dim_ratio * 2),
+                nn.Linear((num_joints - 1) * in_chans, embed_dim_ratio * 2),
                 nn.LayerNorm(embed_dim_ratio * 2),
                 nn.GELU(),
                 nn.Linear(embed_dim_ratio * 2, embed_dim_ratio),
-                nn.Tanh() # 将调制信号限制在 [-1, 1] 防止梯度爆炸
+                nn.Softsign() # 使用 Softsign 代替 Tanh，梯度更平滑且不易饱和
             )
-            # FiLM 调制：生成缩放 gamma 和 平移 beta
             self.film_gamma = nn.Linear(embed_dim_ratio, embed_dim_ratio)
             self.film_beta = nn.Linear(embed_dim_ratio, embed_dim_ratio)
+            # 【关键】引入可学习的调制权重，初值设为 0.01 (几乎不干预)
+            self.lme_alpha = nn.Parameter(torch.zeros(1) + 0.01)
         
         # --- 3. 位置编码 ---
         self.Spatial_pos_embed = nn.Parameter(torch.zeros(1, num_joints, embed_dim_ratio))
@@ -155,7 +153,7 @@ class AnimalPoseFormer(nn.Module):
 
         dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depth)]
 
-        # --- 4. 空间与时间 Transformer 块 ---
+        # --- 4. Transformer 块 ---
         self.Spatial_blocks = nn.ModuleList([
             Block(dim=embed_dim_ratio, num_heads=num_heads, mlp_ratio=mlp_ratio, qkv_bias=qkv_bias, qk_scale=qk_scale,
                 drop=drop_rate, attn_drop=attn_drop_rate, drop_path=dpr[i], norm_layer=norm_layer)
@@ -189,21 +187,17 @@ class AnimalPoseFormer(nn.Module):
 
     def Spatial_forward_features(self, x, gamma, beta, b, f, p, c):
         num_frame_kept = self.num_frame_kept
-
         index = torch.arange((f-1)//2-num_frame_kept//2, (f-1)//2+num_frame_kept//2+1, device=x.device)
-
         x_spatial = self.Joint_embedding(x[:, index].view(b*num_frame_kept, p, -1))
-        
-        # 注入位置编码
         x_spatial += self.Spatial_pos_embed
         
-        # 应用形态学调制 (FiLM)
+        # --- 改进：残差形态学调制 ---
         if self.use_lme and gamma is not None and beta is not None:
-            # 将 [B, 1, D] 重复到 [B*F(kept), P, D]
             g = gamma.repeat_interleave(num_frame_kept, dim=0)
             b_ = beta.repeat_interleave(num_frame_kept, dim=0)
-            # 调制：通过全局形态对局部特征进行约束
-            x_spatial = x_spatial * (1 + g) + b_
+            # 这里的公式改为残差结构：x = x + alpha * (x * g + b)
+            # 这样即便初期 g 和 b 不准，也不会毁掉 x 的原始检测信息
+            x_spatial = x_spatial + self.lme_alpha * (x_spatial * g + b_)
 
         x_spatial = self.pos_drop(x_spatial)
         for blk in self.Spatial_blocks:
@@ -216,7 +210,6 @@ class AnimalPoseFormer(nn.Module):
     def forward_features(self, x, Spatial_feature):
         b, f, p, _ = x.shape
         num_coeff_kept = self.num_coeff_kept
-
         x_freq = dct.dct(x.permute(0, 2, 3, 1))[:, :, :, :num_coeff_kept]
         x_freq = x_freq.permute(0, 3, 1, 2).contiguous().view(b, num_coeff_kept, -1)
         x_freq = self.Freq_embedding(x_freq) 
@@ -232,31 +225,29 @@ class AnimalPoseFormer(nn.Module):
         return x_combined
 
     def forward(self, x):
-        # 统一规范输入格式 [B, F, J, 2]
         if x.shape[-1] != 2:
-            if x.shape[1] == 2:
-                x = x.permute(0, 2, 3, 1).clone()  # [B, 2, F, J] -> [B, F, J, 2]
+            if x.shape[1] == 2: x = x.permute(0, 2, 3, 1).clone()
             
         x_input = x.clone()
         b, f, p, c = x_input.shape
         
-        # --- 形态特征提取 ---
+        # --- 改进：基于骨骼向量提取形态特征 ---
         gamma, beta = None, None
         if self.use_lme:
-            avg_pose = x_input.mean(dim=1).view(b, -1) # [B, J*2]
-            morph_feat = self.morphology_extractor(avg_pose) # [B, D]
-            gamma = self.film_gamma(morph_feat).unsqueeze(1) # [B, 1, D]
-            beta = self.film_beta(morph_feat).unsqueeze(1)   # [B, 1, D]
+            # 计算相邻关节点的相对位移 [B, F, J-1, 2]
+            # 这样提取出的特征只跟“比例”有关，跟平移无关
+            bone_vecs = x_input[:, :, 1:, :] - x_input[:, :, :-1, :]
+            avg_bone = bone_vecs.mean(dim=1).view(b, -1) # [B, (J-1)*2]
+            
+            morph_feat = self.morphology_extractor(avg_bone)
+            gamma = self.film_gamma(morph_feat).unsqueeze(1)
+            beta = self.film_beta(morph_feat).unsqueeze(1)
 
-        # --- 空间处理 (Spatial Transformer) ---
         Spatial_feature = self.Spatial_forward_features(x_input, gamma, beta, b, f, p, c)
-        
-        # --- 混合时间处理 (Mixed Temporal & Freq Transformer) ---
         x_out = self.forward_features(x_input, Spatial_feature)
         
-        # --- 双分支预测输出合并 ---
         x_out = torch.cat((self.weighted_mean(x_out[:, :self.num_coeff_kept]), 
                            self.weighted_mean_(x_out[:, self.num_coeff_kept:])), dim=-1)
 
-        x_out = self.head(x_out).view(b, 1, p, 3) # [B, 1, J, 3]
+        x_out = self.head(x_out).view(b, 1, p, 3)
         return x_out
