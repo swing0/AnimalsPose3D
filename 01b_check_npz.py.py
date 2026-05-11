@@ -4,54 +4,66 @@ import os
 from pathlib import Path
 
 
-def check_npz_structure(npz_file_path):
+def check_npz_structure(npz_file_path, output_file=None):
     """
     检查NPZ文件的结构和内容
     """
-    print(f"检查NPZ文件: {npz_file_path}")
-    print("=" * 60)
+    if output_file:
+        with open(output_file, 'w', encoding='utf-8') as f:
+            f.write(f"检查NPZ文件: {npz_file_path}\n")
+            f.write("=" * 60 + "\n")
 
     if not os.path.exists(npz_file_path):
-        print(f"错误: 文件不存在 - {npz_file_path}")
+        if output_file:
+            with open(output_file, 'a', encoding='utf-8') as f:
+                f.write(f"错误: 文件不存在 - {npz_file_path}\n")
         return
 
     try:
         # 加载NPZ文件
         data = np.load(npz_file_path, allow_pickle=True)
 
-        # 显示文件中的键
-        print("NPZ文件中的键:")
-        for key in data.files:
-            print(f"  - {key}")
+        if output_file:
+            with open(output_file, 'a', encoding='utf-8') as f:
+                # 显示文件中的键
+                f.write("NPZ文件中的键:\n")
+                for key in data.files:
+                    f.write(f"  - {key}\n")
 
-        print("\n" + "=" * 60)
+                f.write("\n" + "=" * 60 + "\n")
 
         # 检查主要数据结构
         if 'positions_3d' in data:
             positions_3d = data['positions_3d'].item()
-            print("positions_3d 结构:")
-            print_structure(positions_3d)
+            if output_file:
+                with open(output_file, 'a', encoding='utf-8') as f:
+                    f.write("positions_3d 结构:\n")
+                print_structure(positions_3d, output_file)
 
-            # 统计信息
-            print_statistics(positions_3d)
+                # 统计信息
+                print_statistics(positions_3d, output_file)
 
-            # 数据质量检查
-            check_data_quality(positions_3d)
+                # 数据质量检查
+                check_data_quality(positions_3d, output_file)
 
         else:
-            print("警告: 未找到 'positions_3d' 键")
-            # 显示所有数组的形状
-            for key in data.files:
-                if isinstance(data[key], np.ndarray):
-                    print(f"{key}: shape={data[key].shape}, dtype={data[key].dtype}")
-                else:
-                    print(f"{key}: type={type(data[key])}")
+            if output_file:
+                with open(output_file, 'a', encoding='utf-8') as f:
+                    f.write("警告: 未找到 'positions_3d' 键\n")
+                    # 显示所有数组的形状
+                    for key in data.files:
+                        if isinstance(data[key], np.ndarray):
+                            f.write(f"{key}: shape={data[key].shape}, dtype={data[key].dtype}\n")
+                        else:
+                            f.write(f"{key}: type={type(data[key])}\n")
 
     except Exception as e:
-        print(f"读取NPZ文件时出错: {e}")
+        if output_file:
+            with open(output_file, 'a', encoding='utf-8') as f:
+                f.write(f"读取NPZ文件时出错: {e}\n")
 
 
-def print_structure(positions_3d, indent=0):
+def print_structure(positions_3d, output_file=None, indent=0):
     """
     递归打印数据结构
     """
@@ -59,21 +71,29 @@ def print_structure(positions_3d, indent=0):
 
     for key, value in positions_3d.items():
         if isinstance(value, dict):
-            print(f"{indent_str}{key}:")
-            print_structure(value, indent + 1)
+            if output_file:
+                with open(output_file, 'a', encoding='utf-8') as f:
+                    f.write(f"{indent_str}{key}:\n")
+            print_structure(value, output_file, indent + 1)
         elif isinstance(value, np.ndarray):
-            print(f"{indent_str}{key}: ndarray {value.shape}, dtype={value.dtype}")
+            if output_file:
+                with open(output_file, 'a', encoding='utf-8') as f:
+                    f.write(f"{indent_str}{key}: ndarray {value.shape}, dtype={value.dtype}\n")
         else:
-            print(f"{indent_str}{key}: {type(value)}")
+            if output_file:
+                with open(output_file, 'a', encoding='utf-8') as f:
+                    f.write(f"{indent_str}{key}: {type(value)}\n")
 
 
-def print_statistics(positions_3d):
+def print_statistics(positions_3d, output_file=None):
     """
     打印数据统计信息
     """
-    print("\n" + "=" * 60)
-    print("数据统计:")
-    print("=" * 60)
+    if output_file:
+        with open(output_file, 'a', encoding='utf-8') as f:
+            f.write("\n" + "=" * 60 + "\n")
+            f.write("数据统计:\n")
+            f.write("=" * 60 + "\n")
 
     total_animals = 0
     total_animations = 0
@@ -95,13 +115,15 @@ def print_statistics(positions_3d):
         total_animals += 1
         animal_stats.append((animal_name, animal_animations, animal_frames))
 
-    print(f"动物种类总数: {total_animals}")
-    print(f"动画序列总数: {total_animations}")
-    print(f"总帧数: {total_frames}")
+    if output_file:
+        with open(output_file, 'a', encoding='utf-8') as f:
+            f.write(f"动物种类总数: {total_animals}\n")
+            f.write(f"动画序列总数: {total_animations}\n")
+            f.write(f"总帧数: {total_frames}\n")
 
-    print(f"\n各动物详细统计:")
-    for animal_name, anim_count, frame_count in sorted(animal_stats, key=lambda x: x[2], reverse=True):
-        print(f"  {animal_name}: {anim_count}个动画, {frame_count}帧")
+            f.write(f"\n各动物详细统计:\n")
+            for animal_name, anim_count, frame_count in sorted(animal_stats, key=lambda x: x[2], reverse=True):
+                f.write(f"  {animal_name}: {anim_count}个动画, {frame_count}帧\n")
 
     # 帧数分布统计
     if total_animations > 0:
@@ -111,21 +133,24 @@ def print_statistics(positions_3d):
                 if isinstance(anim_data, np.ndarray):
                     frame_counts.append(anim_data.shape[0])
 
-        if frame_counts:
-            print(f"\n动画帧数分布:")
-            print(f"  最短动画: {min(frame_counts)} 帧")
-            print(f"  最长动画: {max(frame_counts)} 帧")
-            print(f"  平均帧数: {sum(frame_counts) / len(frame_counts):.1f} 帧")
-            print(f"  总动画数: {len(frame_counts)} 个")
+        if frame_counts and output_file:
+            with open(output_file, 'a', encoding='utf-8') as f:
+                f.write(f"\n动画帧数分布:\n")
+                f.write(f"  最短动画: {min(frame_counts)} 帧\n")
+                f.write(f"  最长动画: {max(frame_counts)} 帧\n")
+                f.write(f"  平均帧数: {sum(frame_counts) / len(frame_counts):.1f} 帧\n")
+                f.write(f"  总动画数: {len(frame_counts)} 个\n")
 
 
-def check_data_quality(positions_3d):
+def check_data_quality(positions_3d, output_file=None):
     """
     检查数据质量
     """
-    print("\n" + "=" * 60)
-    print("数据质量检查:")
-    print("=" * 60)
+    if output_file:
+        with open(output_file, 'a', encoding='utf-8') as f:
+            f.write("\n" + "=" * 60 + "\n")
+            f.write("数据质量检查:\n")
+            f.write("=" * 60 + "\n")
 
     zero_frames_count = 0
     short_animations = 0
@@ -165,27 +190,31 @@ def check_data_quality(positions_3d):
                     data_issues.append(f"{animal_name}.{anim_name}: 零值比例过高 ({zero_ratio:.1%})")
 
     # 输出质量问题
-    if data_issues:
-        print("发现的数据质量问题:")
-        for issue in data_issues:
-            print(f"  ⚠️  {issue}")
-    else:
-        print("✅ 未发现明显数据质量问题")
+    if output_file:
+        with open(output_file, 'a', encoding='utf-8') as f:
+            if data_issues:
+                f.write("发现的数据质量问题:\n")
+                for issue in data_issues:
+                    f.write(f"  ⚠️  {issue}\n")
+            else:
+                f.write("✅ 未发现明显数据质量问题\n")
 
-    if zero_frames_count > 0:
-        print(f"⚠️  发现 {zero_frames_count} 个零帧动画")
+            if zero_frames_count > 0:
+                f.write(f"⚠️  发现 {zero_frames_count} 个零帧动画\n")
 
-    if short_animations > 0:
-        print(f"⚠️  发现 {short_animations} 个短动画 (<10帧)")
+            if short_animations > 0:
+                f.write(f"⚠️  发现 {short_animations} 个短动画 (<10帧)\n")
 
 
-def check_sample_data(positions_3d, num_samples=3):
+def check_sample_data(positions_3d, output_file=None, num_samples=3):
     """
     检查样本数据
     """
-    print("\n" + "=" * 60)
-    print("样本数据检查:")
-    print("=" * 60)
+    if output_file:
+        with open(output_file, 'a', encoding='utf-8') as f:
+            f.write("\n" + "=" * 60 + "\n")
+            f.write("样本数据检查:\n")
+            f.write("=" * 60 + "\n")
 
     sample_count = 0
     for animal_name, animations in positions_3d.items():
@@ -194,12 +223,14 @@ def check_sample_data(positions_3d, num_samples=3):
 
         for anim_name, anim_data in animations.items():
             if isinstance(anim_data, np.ndarray) and anim_data.shape[0] > 0:
-                print(f"\n样本: {animal_name}.{anim_name}")
-                print(f"  形状: {anim_data.shape}")
-                print(f"  数据类型: {anim_data.dtype}")
-                print(f"  数值范围: [{anim_data.min():.3f}, {anim_data.max():.3f}]")
-                print(f"  第一帧第一个关键点: {anim_data[0, 0, :]}")
-                print(f"  最后一帧第一个关键点: {anim_data[-1, 0, :]}")
+                if output_file:
+                    with open(output_file, 'a', encoding='utf-8') as f:
+                        f.write(f"\n样本: {animal_name}.{anim_name}\n")
+                        f.write(f"  形状: {anim_data.shape}\n")
+                        f.write(f"  数据类型: {anim_data.dtype}\n")
+                        f.write(f"  数值范围: [{anim_data.min():.3f}, {anim_data.max():.3f}]\n")
+                        f.write(f"  第一帧第一个关键点: {anim_data[0, 0, :]}\n")
+                        f.write(f"  最后一帧第一个关键点: {anim_data[-1, 0, :]}\n")
 
                 sample_count += 1
                 if sample_count >= num_samples:
@@ -211,7 +242,27 @@ def check_sample_data(positions_3d, num_samples=3):
 def main():
     # 设置NPZ文件路径
     npz_file_path = r"npz\real_npz\data_3d_animals.npz"
-    check_npz_structure(npz_file_path)
+    
+    # 设置输出文件路径
+    output_file = "npz_analysis_output.txt"
+    
+    print(f"正在检查NPZ文件并将结果保存到: {output_file}")
+    
+    check_npz_structure(npz_file_path, output_file)
+    
+    # 如果文件存在，添加样本数据检查
+    if os.path.exists(npz_file_path):
+        try:
+            data = np.load(npz_file_path, allow_pickle=True)
+            if 'positions_3d' in data:
+                positions_3d = data['positions_3d'].item()
+                check_sample_data(positions_3d, output_file)
+        except Exception as e:
+            if output_file:
+                with open(output_file, 'a', encoding='utf-8') as f:
+                    f.write(f"\n检查样本数据时出错: {e}\n")
+    
+    print(f"检查完成！结果已保存到: {output_file}")
 
 
 if __name__ == "__main__":

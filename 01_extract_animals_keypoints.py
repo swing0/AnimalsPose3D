@@ -54,7 +54,14 @@ KEYPOINT_ORDER = list(KEYPOINT_MAPPING.keys())
 
 # 过滤阈值
 MIN_FRAMES = 60  # 最少帧数要求
-
+# 剔除列表：样本量太少或骨骼提取错误的动作
+EXCLUDED_ACTIONS = {
+    "eatloop01low", "eattostandlow", "enrichmentrestraintfeederin", 
+    "enrichmentrestraintfeederout", "enrichmentwallow", "gimmick", 
+    "jump5m", "jumpdown5x1monspot", "jumpup5x1monspot", "nibble", 
+    "runtopounceonspot", "runtopounceturnl", "runtopounceturnr", 
+    "socialcall", "treatment"
+}
 
 def extract_keypoints_from_frame(frame_data):
     """
@@ -194,6 +201,10 @@ def process_zip_file(zip_path):
                         json_data = json.load(f)
 
                     animation_name, np_data = process_json_file(json_data, zip_name, json_file)
+
+                    if animation_name in EXCLUDED_ACTIONS:
+                        print(f"  剔除动画 {animation_name}: 样本量少或骨骼错误")
+                        continue
 
                     if animation_name and len(np_data) >= MIN_FRAMES:
                         if animation_name in animations_data:
