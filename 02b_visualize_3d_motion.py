@@ -141,11 +141,11 @@ def create_interactive_3d_vis(sequence_3d, subject, action):
 
 if __name__ == '__main__':
     # 路径根据你的项目结构调整
-    DATA_PATH = r'npz\real_npz\data_3d_animals.npz'
+    DATA_PATH = r'npz\real_npz\animals_val_3d.npz'
     
     # 你可以手动指定，或留空(None)自动选择第一个
-    SUB = 'Giant_Panda_Male'
-    ACT = 'attackfence'
+    SUB = None
+    ACT = None
 
     try:
         seq, sub, act = load_animal_data(DATA_PATH, SUB, ACT)

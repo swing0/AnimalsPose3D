@@ -5,6 +5,7 @@ import os
 import cv2
 import numpy as np
 import torch
+import time
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 import matplotlib.animation as animation
@@ -16,14 +17,13 @@ import sys
 sys.path.append('./common')
 
 try:
-    from common.ap10k_detector import AP10KAnimalPoseDetector
+    from common.apt36k_video_detector import APT36KVideoPoseDetector, OneEuroFilter
     from common.keypoint_mapper import KeypointMapper
     from common.animal_poseformer import AnimalPoseFormer
 except ImportError as e:
     print(f"❌ 导入错误: {e}")
     sys.exit(1)
 
-# 骨架分组定义
 SKELETON_GROUPS = {
     'trunk': {'edges': [(0, 4), (4, 3), (3, 1), (3, 2)], 'color': 'black', 'label': 'Head & Neck'},
     'front_left': {'edges': [(4, 5), (5, 6), (6, 7)], 'color': 'red', 'label': 'Front Left'},
@@ -32,16 +32,13 @@ SKELETON_GROUPS = {
     'back_right': {'edges': [(0, 14), (14, 15), (15, 16)], 'color': 'cyan', 'label': 'Back Right'}
 }
 
-SKELETON_COLORS_2D = {
-    'trunk': (0, 0, 0), 'front_left': (0, 0, 255), 'front_right': (0, 165, 255),
-    'back_left': (255, 0, 0), 'back_right': (255, 255, 0)
-}
-
 class VideoTo3DVisualizer:
-    def __init__(self, model_checkpoint, onnx_model_path):
+    def __init__(self, model_checkpoint, onnx_model_path,
+                 smooth_2d: bool = True):
         print("🎯 初始化视频到3D可视化器...")
-        self.detector = AP10KAnimalPoseDetector(onnx_model_path)
+        self.detector = APT36KVideoPoseDetector(onnx_model_path)
         self.mapper = KeypointMapper()
+        self.smooth_2d = smooth_2d
         
         # Load Model
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -49,6 +46,7 @@ class VideoTo3DVisualizer:
         
         self.video_frames = []
         self.keypoints_2d_sequence = []
+        self.video_fps = 30.0
         self.keypoints_3d_sequence = []
         
         print("✅ 可视化器初始化完成")
@@ -89,17 +87,65 @@ class VideoTo3DVisualizer:
             
         return model
     
+    def _get_cache_path(self, video_path: str, total_frames: int) -> str:
+        video_name = os.path.splitext(os.path.basename(video_path))[0]
+        cache_dir = os.path.join("video", "temp2D")
+        prefix = f"{video_name}_{total_frames}frames"
+        suffix = "_smooth" if self.smooth_2d else ""
+        return os.path.join(cache_dir, f"{prefix}{suffix}.npz")
+
     def extract_video_frames(self, video_path, max_frames=300):
         print(f"🎥 处理视频: {video_path}")
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened(): raise ValueError(f"无法打开视频: {video_path}")
         
-        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        if max_frames: total_frames = min(total_frames, max_frames)
-        
+        reported_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        video_fps = cap.get(cv2.CAP_PROP_FPS)
+        if video_fps <= 0:
+            video_fps = 30.0
+
+        if reported_frames <= 0:
+            total_frames = max_frames
+        elif max_frames:
+            total_frames = min(reported_frames, max_frames)
+        else:
+            total_frames = reported_frames
+
+        self.video_fps = video_fps
+
+        duration = total_frames / video_fps if video_fps > 0 else 0
+        print(f"  视频信息: {total_frames} 帧, {video_fps:.1f} fps, {duration:.1f} 秒")
+
+        cache_path = self._get_cache_path(video_path, total_frames)
+
+        if os.path.exists(cache_path):
+            print(f"  💾 命中缓存: {cache_path}")
+            data = np.load(cache_path, allow_pickle=True)
+            self.keypoints_2d_sequence = list(data['keypoints_2d'])
+            cached_fps = float(data['video_fps'])
+            if abs(cached_fps - video_fps) > 0.1:
+                self.video_fps = cached_fps
+
+            self.video_frames = []
+            for _ in tqdm(range(total_frames), desc="读取视频帧"):
+                ret, frame = cap.read()
+                if not ret: break
+                self.video_frames.append(frame.copy())
+            cap.release()
+
+            print(f"  ✅ 从缓存加载: {len(self.keypoints_2d_sequence)} 个关键点序列, "
+                  f"{len(self.video_frames)} 帧")
+            return len(self.video_frames)
+
         self.video_frames = []
         self.keypoints_2d_sequence = []
         
+        if self.smooth_2d:
+            filters_2d = [OneEuroFilter(
+                freq=video_fps, min_cutoff=0.8, beta=0.01, d_cutoff=1.0
+            ) for _ in range(17)]
+
+        t_start = time.time()
         pbar = tqdm(total=total_frames, desc="提取视频和关键点")
         for i in range(total_frames):
             ret, frame = cap.read()
@@ -107,25 +153,38 @@ class VideoTo3DVisualizer:
             
             self.video_frames.append(frame.copy())
             
-            # Detect
-            # 为了速度，可以每隔几帧检测一次然后插值，这里演示逐帧
-            temp_path = f"temp_{i}.jpg"
-            cv2.imwrite(temp_path, frame)
             try:
-                result = self.detector.predict(temp_path)
+                result = self.detector.predict_frame(frame)
                 kps = result['keypoints']
                 if np.sum(kps[:, 2] > 0.3) >= 8:
                     kps_train = self.mapper.map_ap10k_to_training(kps)
-                    self.keypoints_2d_sequence.append(kps_train[:, :2])
                 else:
-                    self.keypoints_2d_sequence.append(np.full((17, 2), np.nan))
+                    kps_train = np.full((17, 2), np.nan)
+
+                if self.smooth_2d and not np.any(np.isnan(kps_train)):
+                    for k in range(17):
+                        kps_train[k, :] = filters_2d[k].filter(kps_train[k, :])
+
+                self.keypoints_2d_sequence.append(kps_train[:, :2])
             except:
                 self.keypoints_2d_sequence.append(np.full((17, 2), np.nan))
                 
-            if os.path.exists(temp_path): os.remove(temp_path)
             pbar.update(1)
         pbar.close()
         cap.release()
+        
+        elapsed = time.time() - t_start
+        actual_fps = len(self.video_frames) / elapsed if elapsed > 0 else 0
+        print(f"  2D检测完成: {len(self.video_frames)} 帧, "
+              f"耗时 {elapsed:.1f}s ({actual_fps:.2f} fps)")
+
+        if len(self.keypoints_2d_sequence) > 0:
+            os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+            np.savez(cache_path,
+                     keypoints_2d=np.array(self.keypoints_2d_sequence),
+                     video_fps=self.video_fps)
+            print(f"  💾 缓存已保存: {cache_path}")
+
         return len(self.video_frames)
 
     def normalize_root_relative(self, kps_seq):
@@ -228,30 +287,47 @@ class VideoTo3DVisualizer:
         return True
 
     def visualize_combined(self, video_path):
-        if not self.extract_video_frames(video_path): return
+        if not self.extract_video_frames(video_path, max_frames=10000): return
         if not self.convert_2d_to_3d(): return
-        
+
+        total_frames = len(self.video_frames)
+        base_interval = 1000.0 / self.video_fps
+
         print("🎬 启动可视化界面...")
         import matplotlib
         matplotlib.use('TkAgg')
-        
+
         fig = plt.figure(figsize=(18, 9))
         ax_2d = fig.add_subplot(121)
         ax_3d = fig.add_subplot(122, projection='3d')
-        
+
         ax_2d.axis('off')
         ax_2d.set_title("Input Video")
         ax_3d.set_title("3D Reconstruction (AnimalPoseFormer)")
-        
-        # Plot objects
-        img_plot = None
-        scatter_3d = None
-        lines_3d = []
-        
-        # 暂停状态
+
         self.paused = False
-        
-        # Axis limits
+        self.speed = 1.0
+
+        vis_frames_2d = []
+        for i in range(total_frames):
+            frame = self.video_frames[i].copy()
+            kps = self.keypoints_2d_sequence[i]
+            if not np.any(np.isnan(kps)):
+                for group_name, info in SKELETON_GROUPS.items():
+                    for s, e in info['edges']:
+                        if s < len(kps) and e < len(kps):
+                            pt1 = (int(kps[s][0]), int(kps[s][1]))
+                            pt2 = (int(kps[e][0]), int(kps[e][1]))
+                            cv2.line(frame, pt1, pt2,
+                                     (0, 255, 0) if group_name == 'trunk' else
+                                     (0, 0, 255) if group_name == 'front_left' else
+                                     (0, 165, 255) if group_name == 'front_right' else
+                                     (255, 0, 0) if group_name == 'back_left' else
+                                     (255, 255, 0), 2)
+            vis_frames_2d.append(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+
+        img_plot = ax_2d.imshow(vis_frames_2d[0])
+
         valid_3d = [p for p in self.keypoints_3d_sequence if not np.any(np.isnan(p))]
         if valid_3d:
             valid_3d = np.array(valid_3d)
@@ -259,90 +335,88 @@ class VideoTo3DVisualizer:
             ax_3d.set_xlim(-limit, limit)
             ax_3d.set_ylim(-limit, limit)
             ax_3d.set_zlim(-limit, limit)
-        
+
         ax_3d.view_init(elev=20, azim=45)
-        
-        # 添加暂停按钮
-        ax_pause = plt.axes([0.45, 0.02, 0.1, 0.04])
+
+        scatter_3d = ax_3d.scatter([], [], [], c='r', s=20)
+        lines_3d = {}
+        for group_name, info in SKELETON_GROUPS.items():
+            for s, e in info['edges']:
+                key = (group_name, s, e)
+                lines_3d[key] = ax_3d.plot([], [], [], color=info['color'],
+                                           linewidth=2)[0]
+
+        ax_pause = plt.axes([0.25, 0.02, 0.1, 0.04])
         btn_pause = Button(ax_pause, 'pause', color='lightblue', hovercolor='0.975')
-        
+
         def toggle_pause(event):
             self.paused = not self.paused
-            if self.paused:
-                btn_pause.label.set_text('continue')
-                btn_pause.color = 'lightcoral'
-            else:
-                btn_pause.label.set_text('pause')
-                btn_pause.color = 'lightblue'
+            btn_pause.label.set_text('continue' if self.paused else 'pause')
+            btn_pause.color = 'lightcoral' if self.paused else 'lightblue'
             plt.draw()
-        
+
         btn_pause.on_clicked(toggle_pause)
-        
-        def update(frame_idx):
-            nonlocal img_plot, scatter_3d, lines_3d
-            
-            # 如果暂停，保持当前帧不变
-            if self.paused:
-                return img_plot, scatter_3d, *lines_3d
-            
-            # 2D
-            if frame_idx < len(self.video_frames):
-                frame = self.video_frames[frame_idx].copy()
-                kps = self.keypoints_2d_sequence[frame_idx]
-                
-                # Draw Skeleton
-                if not np.any(np.isnan(kps)):
-                    for s, e in list(SKELETON_GROUPS['trunk']['edges']) + list(SKELETON_GROUPS['front_left']['edges']) + \
-                                list(SKELETON_GROUPS['front_right']['edges']) + list(SKELETON_GROUPS['back_left']['edges']) + \
-                                list(SKELETON_GROUPS['back_right']['edges']):
-                        if s < len(kps) and e < len(kps):
-                            pt1 = (int(kps[s][0]), int(kps[s][1]))
-                            pt2 = (int(kps[e][0]), int(kps[e][1]))
-                            cv2.line(frame, pt1, pt2, (0, 255, 0), 2)
-                            
-                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                if img_plot is None:
-                    img_plot = ax_2d.imshow(frame)
-                else:
-                    img_plot.set_data(frame)
-            
-            # 3D
-            if frame_idx < len(self.keypoints_3d_sequence):
-                pose = self.keypoints_3d_sequence[frame_idx]
-                if scatter_3d is not None: scatter_3d.remove()
-                for l in lines_3d: l.remove()
-                lines_3d = []
-                
-                if not np.any(np.isnan(pose)):
-                    scatter_3d = ax_3d.scatter(pose[:,0], pose[:,1], pose[:,2], c='r', s=20)
-                    
+
+        ax_speed = plt.axes([0.38, 0.02, 0.2, 0.04])
+        slider_speed = Slider(ax_speed, 'speed', 0.1, 3.0, valinit=1.0, valstep=0.1)
+
+        ax_frame = plt.axes([0.62, 0.02, 0.3, 0.04])
+        slider_frame = Slider(ax_frame, 'frame', 0, total_frames - 1,
+                              valinit=0, valfmt='%d', valstep=1)
+
+        def on_speed(val):
+            self.speed = float(val)
+            ani.event_source.interval = base_interval / self.speed
+
+        slider_speed.on_changed(on_speed)
+
+        frame_idx = [0]
+
+        def update(anim_frame):
+            idx = int(slider_frame.val) if self.paused else frame_idx[0]
+
+            if idx < total_frames:
+                img_plot.set_data(vis_frames_2d[idx])
+                pose3d = self.keypoints_3d_sequence[idx] if idx < len(self.keypoints_3d_sequence) else None
+                if pose3d is not None and not np.any(np.isnan(pose3d)):
+                    scatter_3d._offsets3d = (pose3d[:, 0], pose3d[:, 1], pose3d[:, 2])
                     for group_name, info in SKELETON_GROUPS.items():
                         for s, e in info['edges']:
-                             lines_3d.append(ax_3d.plot(
-                                 [pose[s,0], pose[e,0]],
-                                 [pose[s,1], pose[e,1]],
-                                 [pose[s,2], pose[e,2]],
-                                 color=info['color']
-                             )[0])
-                             
-            ax_2d.set_title(f"Frame {frame_idx} {'(暂停)' if self.paused else ''}")
-            
-            return img_plot, scatter_3d, *lines_3d
+                            key = (group_name, s, e)
+                            lines_3d[key].set_data([pose3d[s, 0], pose3d[e, 0]],
+                                                   [pose3d[s, 1], pose3d[e, 1]])
+                            lines_3d[key].set_3d_properties([pose3d[s, 2], pose3d[e, 2]])
+                else:
+                    scatter_3d._offsets3d = ([], [], [])
+                    for key, line in lines_3d.items():
+                        line.set_data([], [])
+                        line.set_3d_properties([])
 
-        total_frames = len(self.video_frames)
-        ani = animation.FuncAnimation(fig, update, frames=total_frames, interval=50)
-        
+            ax_2d.set_title(f"Frame {anim_frame}/{total_frames}"
+                            f"{' (pause)' if self.paused else ''}"
+                            f" x{self.speed:.1f}")
+
+            if not self.paused:
+                slider_frame.set_val(anim_frame % total_frames)
+                frame_idx[0] = (anim_frame + 1) % total_frames
+
+            return [img_plot, scatter_3d] + list(lines_3d.values())
+
+        ani = animation.FuncAnimation(fig, update, frames=total_frames,
+                                       interval=base_interval, blit=False,
+                                       repeat=True, cache_frame_data=False)
+
         plt.show()
 
 def main():
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('--video', type=str, default='video/goat.mp4', help='Path to video')
+    parser.add_argument('--video', type=str, default='video/wolf.mp4', help='Path to video')
     args = parser.parse_args()
     
-    # 默认加载 16_train_animal_poseformer.py 训练出来的最佳模型
+    # 默认加载 AnimalPoseFormer 训练出来的最佳模型
     checkpoint = 'checkpoints/animal_poseformer_best_model.pt'
-    onnx_path = 'model/ap10k/end2end.onnx'
+    onnx_path = 'model/apt36k/vitpose-b-apt36k.onnx'
     
     if not os.path.exists(args.video):
         print(f"Please provide valid video path. {args.video} not found.")

@@ -342,7 +342,7 @@ def main():
     detector = AP10KAnimalPoseDetector("model/ap10k/end2end.onnx")
 
     # 检测图像
-    image_path = "addax.png"  # 替换为您的图像路径
+    image_path = "video/addax.png"  # 替换为您的图像路径
 
     try:
         # 进行预测（如果不提供bbox，则使用整张图像）
@@ -353,7 +353,7 @@ def main():
 
         # 可视化结果
         detector.visualize(image_path, result, confidence_threshold=0.3,
-                           save_path="result_visualization.jpg")
+                           save_path="video/result_visualization.jpg")
 
     except Exception as e:
         print(f"错误: {e}")
