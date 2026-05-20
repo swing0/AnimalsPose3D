@@ -19,7 +19,6 @@ sys.path.append('./common')
 try:
     from common.apt36k_video_detector import APT36KVideoPoseDetector, OneEuroFilter
     from common.keypoint_mapper import KeypointMapper
-    from common.animal_poseformer import AnimalPoseFormer
 except ImportError as e:
     print(f"❌ 导入错误: {e}")
     sys.exit(1)
@@ -32,15 +31,71 @@ SKELETON_GROUPS = {
     'back_right': {'edges': [(0, 14), (14, 15), (15, 16)], 'color': 'cyan', 'label': 'Back Right'}
 }
 
+MODEL_META = {
+    'animalposeformer': {'seq_len': 27, 'ckpt': 'checkpoints/compare_animalposeformer_best.pt'},
+    'poseformer':        {'seq_len': 27, 'ckpt': 'checkpoints/compare_poseformer_best.pt'},
+    'poseformerv2':      {'seq_len': 27, 'ckpt': 'checkpoints/compare_poseformerv2_best.pt'},
+    'videopose3d':       {'seq_len': 27, 'ckpt': 'checkpoints/compare_videopose3d_best.pt'},
+    'dstformer':         {'seq_len': 27, 'ckpt': 'checkpoints/compare_dstformer_best.pt'},
+}
+
+
+def _build_3d_model(model_name, seq_len, device):
+    if model_name == 'animalposeformer':
+        from common.animal_poseformer import AnimalPoseFormer
+        return AnimalPoseFormer(
+            num_frame=seq_len, num_joints=17, in_chans=2,
+            embed_dim_ratio=32, depth=4, num_heads=8, mlp_ratio=2.,
+            qkv_bias=True, qk_scale=None, drop_rate=0., attn_drop_rate=0.,
+            drop_path_rate=0.2, use_lme=True,
+            num_frame_kept=seq_len, num_coeff_kept=seq_len
+        ).to(device)
+    elif model_name == 'poseformer':
+        from common.poseformer.model_poseformer import PoseTransformer
+        return PoseTransformer(
+            num_frame=seq_len, num_joints=17, in_chans=2,
+            embed_dim_ratio=32, depth=4, num_heads=8, mlp_ratio=2.,
+            qkv_bias=True, qk_scale=None, drop_rate=0., attn_drop_rate=0.,
+            drop_path_rate=0.2
+        ).to(device)
+    elif model_name == 'poseformerv2':
+        from common.poseformerv2.model_poseformerV2 import PoseTransformerV2
+        import argparse as _ap
+        args_ns = _ap.Namespace(
+            embed_dim_ratio=32, depth=4,
+            number_of_kept_frames=seq_len, number_of_kept_coeffs=seq_len
+        )
+        return PoseTransformerV2(
+            num_frame=seq_len, num_joints=17, in_chans=2,
+            num_heads=8, mlp_ratio=2., qkv_bias=True,
+            drop_rate=0., attn_drop_rate=0., drop_path_rate=0.2, args=args_ns
+        ).to(device)
+    elif model_name == 'videopose3d':
+        from common.videopose3D.model import TemporalModel
+        return TemporalModel(
+            num_joints_in=17, in_features=2, num_joints_out=17,
+            filter_widths=[3, 3, 3], dropout=0.25, channels=1024
+        ).to(device)
+    elif model_name == 'dstformer':
+        from common.MotionBERT.DSTformer import DSTformer
+        return DSTformer(
+            dim_in=2, dim_out=3, dim_feat=256, depth=4, num_heads=8,
+            mlp_ratio=2, num_joints=17, maxlen=seq_len
+        ).to(device)
+    raise ValueError(f"Unknown model: {model_name}")
+
+
 class VideoTo3DVisualizer:
     def __init__(self, model_checkpoint, onnx_model_path,
-                 smooth_2d: bool = True):
+                 smooth_2d: bool = True, model_name: str = 'animalposeformer'):
         print("🎯 初始化视频到3D可视化器...")
         self.detector = APT36KVideoPoseDetector(onnx_model_path)
         self.mapper = KeypointMapper()
         self.smooth_2d = smooth_2d
+        self.model_name = model_name
+        self.meta = MODEL_META[model_name]
+        self.seq_len = self.meta['seq_len']
         
-        # Load Model
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.model_3d = self.load_3d_model(model_checkpoint)
         
@@ -52,30 +107,13 @@ class VideoTo3DVisualizer:
         print("✅ 可视化器初始化完成")
     
     def load_3d_model(self, checkpoint_path):
-        print(f"📥 加载3D模型: {checkpoint_path}")
-        # 参数必须与 16_train_animal_poseformer.py 一致
-        model = AnimalPoseFormer(
-            num_frame=27, 
-            num_joints=17, 
-            in_chans=2, 
-            embed_dim_ratio=32, 
-            depth=4,
-            num_heads=8, 
-            mlp_ratio=2., 
-            qkv_bias=True, 
-            qk_scale=None,
-            drop_rate=0., 
-            attn_drop_rate=0., 
-            drop_path_rate=0.2,
-            use_lme=True,
-            num_frame_kept=27,
-            num_coeff_kept=27
-        ).to(self.device)
-        
+        print(f"📥 加载3D模型 ({self.model_name}): {checkpoint_path}")
+        model = _build_3d_model(self.model_name, self.seq_len, self.device)
+
         if not os.path.exists(checkpoint_path):
             print(f"❌ 模型文件不存在: {checkpoint_path}")
             return None
-            
+
         try:
             state_dict = torch.load(checkpoint_path, map_location=self.device)
             model.load_state_dict(state_dict)
@@ -84,7 +122,7 @@ class VideoTo3DVisualizer:
         except Exception as e:
             print(f"❌ 模型加载失败: {e}")
             return None
-            
+
         return model
     
     def _get_cache_path(self, video_path: str, total_frames: int) -> str:
@@ -222,67 +260,53 @@ class VideoTo3DVisualizer:
         return np.array(normalized_seq), stored_scales
 
     def convert_2d_to_3d(self):
-        print("🔄 转换 2D -> 3D...")
+        print(f"🔄 转换 2D -> 3D ({self.model_name})...")
         if not self.keypoints_2d_sequence: return False
-        
+
         kps_2d_arr = np.array(self.keypoints_2d_sequence)
         kps_norm_arr, scales = self.normalize_root_relative(kps_2d_arr)
-        
+
         self.keypoints_3d_sequence = []
-        seq_len = 27
-        
-        # 滑动窗口处理
         num_frames = len(kps_norm_arr)
-        
-        # Pad beginning
-        pad_len = seq_len // 2
-        padded_input = np.pad(kps_norm_arr, ((pad_len, pad_len), (0,0), (0,0)), mode='edge')
-        
-        # Inference Loop
+
+        pad_len = self.seq_len // 2
+        padded_input = np.pad(kps_norm_arr, ((pad_len, pad_len), (0, 0), (0, 0)), mode='edge')
+
         bs = 32
-        
-        # 准备 batch
         input_batches = []
-        
         current_batch = []
-        
+
         for i in range(num_frames):
-            window = padded_input[i : i+seq_len]
+            window = padded_input[i:i + self.seq_len]
             if np.any(np.isnan(window)):
-                # fill nan with 0
                 window = np.nan_to_num(window, 0.0)
-                
             current_batch.append(window)
             if len(current_batch) == bs or i == num_frames - 1:
                 input_batches.append(np.array(current_batch))
                 current_batch = []
 
-        # Run Model
         all_preds = []
         with torch.no_grad():
             for batch_np in tqdm(input_batches, desc="3D 推理"):
-                batch_tensor = torch.tensor(batch_np, dtype=torch.float32).to(self.device)
-                
-                # Forward
-                pred_norm = self.model_3d(batch_tensor)  # (B, 1, 17, 3) 对于 PoseFormer
-                
-                # 取第0帧因为网络将整个27帧序列压缩并仅输出中心帧
-                pred_frame = pred_norm[:, 0, :, :] # (B, 17, 3)
-                
+                batch_tensor = torch.tensor(batch_np, dtype=torch.float32).to(self.device).contiguous()
+                pred = self.model_3d(batch_tensor)
+
+                if pred.shape[1] == 1:
+                    pred_frame = pred[:, 0, :, :]
+                else:
+                    pred_frame = pred[:, self.seq_len // 2, :, :]
+
                 all_preds.append(pred_frame.cpu().numpy())
-                
-        all_preds = np.concatenate(all_preds, axis=0) # (N, 17, 3)
-        
-        # 反归一化 (仅 Scale，因为是 Root Relative 的 3D)
+
+        all_preds = np.concatenate(all_preds, axis=0)
+
         for i, pred_3d_norm in enumerate(all_preds):
             scale = scales[i] if i < len(scales) else 100.0
-            if scale == 1.0: scale = 100.0 # Default if unknown
-            
-            # 乘以 Scale 还原物理大小 (Approx)
-            pred_3d = pred_3d_norm * scale * 2.0 # 2.0 是经验系数
-            
+            if scale == 1.0:
+                scale = 100.0
+            pred_3d = pred_3d_norm * scale * 2.0
             self.keypoints_3d_sequence.append(pred_3d)
-            
+
         print(f"✅ 3D序列生成完毕: {len(self.keypoints_3d_sequence)} 帧")
         return True
 
@@ -411,23 +435,24 @@ class VideoTo3DVisualizer:
 def main():
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('--video', type=str, default='video/wolf.mp4', help='Path to video')
+    parser.add_argument('--video', type=str, default='video/goat.mp4', help='Path to video')
+    parser.add_argument('--model', type=str, default='animalposeformer',
+                        choices=list(MODEL_META.keys()), help='3D model name')
     args = parser.parse_args()
-    
-    # 默认加载 AnimalPoseFormer 训练出来的最佳模型
-    checkpoint = 'checkpoints/animal_poseformer_best_model.pt'
+
+    meta = MODEL_META[args.model]
+    checkpoint = meta['ckpt']
     onnx_path = 'model/apt36k/vitpose-b-apt36k.onnx'
-    
+
     if not os.path.exists(args.video):
         print(f"Please provide valid video path. {args.video} not found.")
-        # Try finding a video
         if os.path.exists("video"):
             vids = [v for v in os.listdir("video") if v.endswith(".mp4")]
             if vids:
                 args.video = os.path.join("video", vids[0])
                 print(f"Using found video: {args.video}")
-    
-    viz = VideoTo3DVisualizer(checkpoint, onnx_path)
+
+    viz = VideoTo3DVisualizer(checkpoint, onnx_path, model_name=args.model)
     if viz.model_3d:
         viz.visualize_combined(args.video)
 

@@ -179,7 +179,7 @@ def train():
 
     import datetime
     start_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    with open("animal_poseformer_training_log.txt", "a", encoding="utf-8") as f:
+    with open("log/animal_poseformer_training_log.txt", "a", encoding="utf-8") as f:
         f.write(f"\n{'='*70}\n")
         f.write(f"🚀 AnimalPoseFormer Training Started at {start_time}\n")
         f.write(f"{'='*70}\n")
@@ -324,7 +324,7 @@ def train():
 
         print(log_msg)
 
-        with open("animal_poseformer_training_log.txt", "a", encoding="utf-8") as f:
+        with open("log/animal_poseformer_training_log.txt", "a", encoding="utf-8") as f:
             f.write(log_msg + "\n")
 
         scheduler.step(avg_val_pa_mpjpe)
@@ -334,7 +334,7 @@ def train():
             os.makedirs('checkpoints', exist_ok=True)
             torch.save(model.state_dict(), 'checkpoints/animal_poseformer_best_model.pt')
             print(f"💾 Saved Best Model ({best_val_loss:.2f}mm)")
-            with open("animal_poseformer_training_log.txt", "a", encoding="utf-8") as f:
+            with open("log/animal_poseformer_training_log.txt", "a", encoding="utf-8") as f:
                 f.write(f"💾 Saved Best Model ({best_val_loss:.2f}mm)\n")
 
     print("\n" + "=" * 70)
@@ -376,7 +376,7 @@ def train():
                 f"Test  PA-MPJPE: {avg_test_pa_mpjpe:6.1f}mm")
 
     print(test_msg)
-    with open("animal_poseformer_training_log.txt", "a", encoding="utf-8") as f:
+    with open("log/animal_poseformer_training_log.txt", "a", encoding="utf-8") as f:
         f.write(test_msg + "\n")
 
 if __name__ == '__main__':
