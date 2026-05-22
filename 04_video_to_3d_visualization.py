@@ -69,7 +69,7 @@ def enforce_per_frame_consistency(kps_3d, edges, symmetry_pairs):
     return kps
 
 MODEL_META = {
-    'animalposeformer': {'seq_len': 27, 'ckpt': 'checkpoints/compare_animalposeformer_best.pt'},
+    'animalposeformer': {'seq_len': 27, 'ckpt': 'checkpoints/animal_poseformer_best_model.pt'},
     'poseformer':        {'seq_len': 27, 'ckpt': 'checkpoints/compare_poseformer_best.pt'},
     'poseformerv2':      {'seq_len': 27, 'ckpt': 'checkpoints/compare_poseformerv2_best.pt'},
     'videopose3d':       {'seq_len': 27, 'ckpt': 'checkpoints/compare_videopose3d_best.pt'},
@@ -438,7 +438,7 @@ class VideoTo3DVisualizer:
             ax_3d.set_ylim(-limit, limit)
             ax_3d.set_zlim(-limit, limit)
 
-        ax_3d.view_init(elev=20, azim=45)
+        ax_3d.view_init(elev=20, azim=-90)
 
         scatter_3d = ax_3d.scatter([], [], [], c='r', s=20)
         lines_3d = {}
@@ -450,14 +450,6 @@ class VideoTo3DVisualizer:
 
         ax_pause = plt.axes([0.25, 0.02, 0.1, 0.04])
         btn_pause = Button(ax_pause, 'pause', color='lightblue', hovercolor='0.975')
-
-        def toggle_pause(event):
-            self.paused = not self.paused
-            btn_pause.label.set_text('continue' if self.paused else 'pause')
-            btn_pause.color = 'lightcoral' if self.paused else 'lightblue'
-            plt.draw()
-
-        btn_pause.on_clicked(toggle_pause)
 
         ax_speed = plt.axes([0.38, 0.02, 0.2, 0.04])
         slider_speed = Slider(ax_speed, 'speed', 0.1, 3.0, valinit=1.0, valstep=0.1)
@@ -473,9 +465,35 @@ class VideoTo3DVisualizer:
         slider_speed.on_changed(on_speed)
 
         frame_idx = [0]
+        slider_programmatic = [False]
+
+        def on_frame_slider(val):
+            if not slider_programmatic[0]:
+                self.paused = True
+                btn_pause.label.set_text('continue')
+                btn_pause.color = 'lightcoral'
+
+        slider_frame.on_changed(on_frame_slider)
+
+        def toggle_pause(event):
+            self.paused = not self.paused
+            btn_pause.label.set_text('continue' if self.paused else 'pause')
+            btn_pause.color = 'lightcoral' if self.paused else 'lightblue'
+            if not self.paused:
+                frame_idx[0] = int(slider_frame.val)
+            plt.draw()
+
+        btn_pause.on_clicked(toggle_pause)
 
         def update(anim_frame):
-            idx = int(slider_frame.val) if self.paused else frame_idx[0]
+            if self.paused:
+                idx = int(slider_frame.val)
+            else:
+                idx = frame_idx[0]
+                slider_programmatic[0] = True
+                slider_frame.set_val(idx)
+                slider_programmatic[0] = False
+                frame_idx[0] = (idx + 1) % total_frames
 
             if idx < total_frames:
                 img_plot.set_data(vis_frames_2d[idx])
@@ -494,13 +512,9 @@ class VideoTo3DVisualizer:
                         line.set_data([], [])
                         line.set_3d_properties([])
 
-            ax_2d.set_title(f"Frame {anim_frame}/{total_frames}"
+            ax_2d.set_title(f"Frame {idx}/{total_frames}"
                             f"{' (pause)' if self.paused else ''}"
                             f" x{self.speed:.1f}")
-
-            if not self.paused:
-                slider_frame.set_val(anim_frame % total_frames)
-                frame_idx[0] = (anim_frame + 1) % total_frames
 
             return [img_plot, scatter_3d] + list(lines_3d.values())
 
