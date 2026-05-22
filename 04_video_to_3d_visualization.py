@@ -31,12 +31,53 @@ SKELETON_GROUPS = {
     'back_right': {'edges': [(0, 14), (14, 15), (15, 16)], 'color': 'cyan', 'label': 'Back Right'}
 }
 
+BONE_CHAIN = [
+    (0, 4), (4, 3), (3, 1), (3, 2),
+    (4, 5), (5, 6), (6, 7),
+    (4, 8), (8, 9), (9, 10),
+    (0, 11), (11, 12), (12, 13),
+    (0, 14), (14, 15), (15, 16),
+]
+
+SYMMETRY_PAIRS = {
+    (3, 1): (3, 2),
+    (4, 5): (4, 8), (5, 6): (8, 9), (6, 7): (9, 10),
+    (0, 11): (0, 14), (11, 12): (14, 15), (12, 13): (15, 16),
+}
+
+
+def enforce_per_frame_consistency(kps_3d, edges, symmetry_pairs):
+    kps = kps_3d.copy()
+
+    target = {}
+    for p, c in edges:
+        current = np.linalg.norm(kps[c] - kps[p])
+        if (p, c) in symmetry_pairs:
+            mirror = symmetry_pairs[(p, c)]
+            mirror_len = np.linalg.norm(kps[mirror[1]] - kps[mirror[0]])
+            target[(p, c)] = (current + mirror_len) / 2.0
+        else:
+            target[(p, c)] = current
+
+    for (parent, child), target_len in target.items():
+        vec = kps[child] - kps[parent]
+        current_len = np.linalg.norm(vec)
+        if current_len < 1e-6:
+            continue
+        kps[child] = kps[parent] + vec * (target_len / current_len)
+
+    return kps
+
 MODEL_META = {
     'animalposeformer': {'seq_len': 27, 'ckpt': 'checkpoints/compare_animalposeformer_best.pt'},
     'poseformer':        {'seq_len': 27, 'ckpt': 'checkpoints/compare_poseformer_best.pt'},
     'poseformerv2':      {'seq_len': 27, 'ckpt': 'checkpoints/compare_poseformerv2_best.pt'},
     'videopose3d':       {'seq_len': 27, 'ckpt': 'checkpoints/compare_videopose3d_best.pt'},
     'dstformer':         {'seq_len': 27, 'ckpt': 'checkpoints/compare_dstformer_best.pt'},
+    'dstformer_full':    {'seq_len': 243, 'ckpt': 'checkpoints/compare_dstformer_full_best.pt'},
+    'motionagformer':   {'seq_len': 27, 'ckpt': 'checkpoints/compare_motionagformer_best.pt'},
+    'stcformer':        {'seq_len': 27, 'ckpt': 'checkpoints/compare_stcformer_best.pt'},
+    'mixste':           {'seq_len': 27, 'ckpt': 'checkpoints/compare_mixste_best.pt'},
 }
 
 
@@ -79,8 +120,38 @@ def _build_3d_model(model_name, seq_len, device):
     elif model_name == 'dstformer':
         from common.MotionBERT.DSTformer import DSTformer
         return DSTformer(
-            dim_in=2, dim_out=3, dim_feat=256, depth=4, num_heads=8,
+            dim_in=2, dim_out=3, dim_feat=448, depth=4, num_heads=8,
             mlp_ratio=2, num_joints=17, maxlen=seq_len
+        ).to(device)
+    elif model_name == 'dstformer_full':
+        from common.MotionBERT.DSTformer import DSTformer
+        return DSTformer(
+            dim_in=2, dim_out=3, dim_feat=512, dim_rep=512,
+            depth=5, num_heads=8, mlp_ratio=4,
+            num_joints=17, maxlen=seq_len
+        ).to(device)
+    elif model_name == 'motionagformer':
+        from common.MotionAGFormer.MotionAGFormer import MotionAGFormer
+        return MotionAGFormer(
+            n_layers=8, dim_in=2, dim_feat=256, dim_rep=512, dim_out=3,
+            mlp_ratio=4, num_heads=8, num_joints=17, n_frames=seq_len
+        ).to(device)
+    elif model_name == 'stcformer':
+        import argparse as _ap
+        from common.STCFormer.stcformer import Model
+        stc_args = _ap.Namespace(
+            layers=8, d_hid=320, frames=seq_len,
+            n_joints=17, out_joints=17
+        )
+        return Model(stc_args).to(device)
+    elif model_name == 'mixste':
+        import argparse as _ap
+        from common.MixSTE.model_cross import MixSTE2
+        return MixSTE2(
+            num_frame=seq_len, num_joints=17, in_chans=2,
+            embed_dim_ratio=512, depth=4, num_heads=8, mlp_ratio=2.,
+            qkv_bias=True, qk_scale=None, drop_rate=0., attn_drop_rate=0.,
+            drop_path_rate=0.2
         ).to(device)
     raise ValueError(f"Unknown model: {model_name}")
 
@@ -307,7 +378,14 @@ class VideoTo3DVisualizer:
             pred_3d = pred_3d_norm * scale * 2.0
             self.keypoints_3d_sequence.append(pred_3d)
 
-        print(f"✅ 3D序列生成完毕: {len(self.keypoints_3d_sequence)} 帧")
+        for i in range(len(self.keypoints_3d_sequence)):
+            if not np.any(np.isnan(self.keypoints_3d_sequence[i])):
+                self.keypoints_3d_sequence[i] = enforce_per_frame_consistency(
+                    self.keypoints_3d_sequence[i], BONE_CHAIN, SYMMETRY_PAIRS
+                )
+
+        print(f"✅ 3D序列生成完毕: {len(self.keypoints_3d_sequence)} 帧 "
+              f"(逐帧骨骼自洽)")
         return True
 
     def visualize_combined(self, video_path):
@@ -435,7 +513,7 @@ class VideoTo3DVisualizer:
 def main():
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('--video', type=str, default='video/goat.mp4', help='Path to video')
+    parser.add_argument('--video', type=str, default='video/animals.mp4', help='Path to video')
     parser.add_argument('--model', type=str, default='animalposeformer',
                         choices=list(MODEL_META.keys()), help='3D model name')
     args = parser.parse_args()

@@ -36,6 +36,22 @@ MODEL_CFG = {
         'seq_len': 27,
         'ckpt': 'checkpoints/compare_dstformer_best.pt',
     },
+    'dstformer_full': {
+        'seq_len': 243,
+        'ckpt': 'checkpoints/compare_dstformer_full_best.pt',
+    },
+    'motionagformer': {
+        'seq_len': 27,
+        'ckpt': 'checkpoints/compare_motionagformer_best.pt',
+    },
+    'stcformer': {
+        'seq_len': 27,
+        'ckpt': 'checkpoints/compare_stcformer_best.pt',
+    },
+    'mixste': {
+        'seq_len': 27,
+        'ckpt': 'checkpoints/compare_mixste_best.pt',
+    },
 }
 
 
@@ -77,8 +93,36 @@ def build_eval_model(model_name, seq_len, device):
     elif model_name == 'dstformer':
         from common.MotionBERT.DSTformer import DSTformer
         return DSTformer(
-            dim_in=2, dim_out=3, dim_feat=256, depth=4, num_heads=8,
+            dim_in=2, dim_out=3, dim_feat=448, depth=4, num_heads=8,
             mlp_ratio=2, num_joints=17, maxlen=seq_len
+        ).to(device)
+    elif model_name == 'dstformer_full':
+        from common.MotionBERT.DSTformer import DSTformer
+        return DSTformer(
+            dim_in=2, dim_out=3, dim_feat=512, dim_rep=512,
+            depth=5, num_heads=8, mlp_ratio=4,
+            num_joints=17, maxlen=seq_len
+        ).to(device)
+    elif model_name == 'motionagformer':
+        from common.MotionAGFormer.MotionAGFormer import MotionAGFormer
+        return MotionAGFormer(
+            n_layers=8, dim_in=2, dim_feat=256, dim_rep=512, dim_out=3,
+            mlp_ratio=4, num_heads=8, num_joints=17, n_frames=seq_len
+        ).to(device)
+    elif model_name == 'stcformer':
+        from common.STCFormer.stcformer import Model
+        stc_args = argparse.Namespace(
+            layers=8, d_hid=320, frames=seq_len,
+            n_joints=17, out_joints=17
+        )
+        return Model(stc_args).to(device)
+    elif model_name == 'mixste':
+        from common.MixSTE.model_cross import MixSTE2
+        return MixSTE2(
+            num_frame=seq_len, num_joints=17, in_chans=2,
+            embed_dim_ratio=512, depth=4, num_heads=8, mlp_ratio=2.,
+            qkv_bias=True, qk_scale=None, drop_rate=0., attn_drop_rate=0.,
+            drop_path_rate=0.2
         ).to(device)
     raise ValueError(f"Unknown: {model_name}")
 
@@ -365,7 +409,7 @@ def evaluate(model_name):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--model', type=str, default="videopose3d",
+    parser.add_argument('--model', type=str, default="mixste",
                         choices=list(MODEL_CFG.keys()),
                         help='Model to evaluate')
     args = parser.parse_args()

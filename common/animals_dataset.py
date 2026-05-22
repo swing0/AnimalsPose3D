@@ -5,8 +5,8 @@ from common.mocap_dataset import MocapDataset
 # AP-10K based quadruped animal skeleton
 quadruped_skeleton = Skeleton(
     parents=[-1, 0, 1, 2, 3, 0, 5, 6, 7, 0, 9, 10, 11, 0, 13, 14, 15],
-    joints_left=[5, 6, 7, 8, 13, 14, 15, 16],  # All left side joints
-    joints_right=[1, 2, 3, 4, 9, 10, 11, 12]  # All right side joints
+    joints_left=[5, 6, 7, 11, 12, 13],   # LShoulder, LElbow, LPaw, LHip, LKnee, LFoot
+    joints_right=[8, 9, 10, 14, 15, 16]  # RShoulder, RElbow, RPaw, RHip, RKnee, RFoot
 )
 
 class AnimalsDataset(MocapDataset):
