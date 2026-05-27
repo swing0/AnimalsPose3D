@@ -12,17 +12,51 @@ KEYPOINT_MAPPING = {
     "Right Eye": ["def_eye_joint.R"],
     "Nose": ["def_c_nose_joint"],
     "Neck": ["def_c_neck1_joint", "def_c_neck2_joint"],
-    "Left Shoulder": ["def_frontLegLwrHalfTwist_joint.L"],
-    "Left Elbow": ["def_frontHorselinkHalfTwist_joint.L"],
+    "Left Shoulder": [
+        "def_frontLegUpr_joint.L",
+        "def_frontLegUprHalfTwist_joint.L",
+        "def_frontLegLwrHalfTwist_joint.L",
+    ],
+    "Left Elbow": [
+        "def_frontHorselink_joint.L",
+        "def_frontHorselinkHalfTwist_joint.L",
+        "def_frontLegLwr_joint.L",
+        "def_frontLegLwrHalfTwist_joint.L",
+    ],
     "Left Front Paw": ["def_frontFoot_joint.L"],
-    "Right Shoulder": ["def_frontLegLwrHalfTwist_joint.R"],
-    "Right Elbow": ["def_frontHorselinkHalfTwist_joint.R"],
+    "Right Shoulder": [
+        "def_frontLegUpr_joint.R",
+        "def_frontLegUprHalfTwist_joint.R",
+        "def_frontLegLwrHalfTwist_joint.R",
+    ],
+    "Right Elbow": [
+        "def_frontHorselink_joint.R",
+        "def_frontHorselinkHalfTwist_joint.R",
+        "def_frontLegLwr_joint.R",
+        "def_frontLegLwrHalfTwist_joint.R",
+    ],
     "Right Front Paw": ["def_frontFoot_joint.R"],
-    "Left Hip": ["def_rearLegLwrHalfTwist_joint.L"],
-    "Left Knee": ["def_rearHorselink_joint.L"],
+    "Left Hip": [
+        "def_rearLegUpr_joint.L",
+        "def_rearLegUprHalfTwist_joint.L",
+        "def_rearLegLwrHalfTwist_joint.L",
+    ],
+    "Left Knee": [
+        "def_rearHorselink_joint.L",
+        "def_rearLegLwr_joint.L",
+        "def_rearLegLwrHalfTwist_joint.L",
+    ],
     "Left Back Paw": ["def_rearFoot_joint.L"],
-    "Right Hip": ["def_rearLegLwrHalfTwist_joint.R"],
-    "Right Knee": ["def_rearHorselink_joint.R"],
+    "Right Hip": [
+        "def_rearLegUpr_joint.R",
+        "def_rearLegUprHalfTwist_joint.R",
+        "def_rearLegLwrHalfTwist_joint.R",
+    ],
+    "Right Knee": [
+        "def_rearHorselink_joint.R",
+        "def_rearLegLwr_joint.R",
+        "def_rearLegLwrHalfTwist_joint.R",
+    ],
     "Right Back Paw": ["def_rearFoot_joint.R"]
 }
 

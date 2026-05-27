@@ -74,6 +74,24 @@ MODEL_CONFIGS = {
         'log': 'log/compare_mixste_log.txt',
         'import_name': 'MixSTE2', 'module': 'common.MixSTE.model_cross',
     },
+    'dtf': {
+        'seq_len': 27, 'batch_size': 16, 'lr': 1e-4, 'epochs': 200,
+        'ckpt': 'checkpoints/compare_dtf_best.pt',
+        'log': 'log/compare_dtf_log.txt',
+        'import_name': 'Model', 'module': 'common.DTF.dtf',
+    },
+    'graphmlp': {
+        'seq_len': 27, 'batch_size': 32, 'lr': 2e-4, 'epochs': 200,
+        'ckpt': 'checkpoints/compare_graphmlp_best.pt',
+        'log': 'log/compare_graphmlp_log.txt',
+        'import_name': 'Model', 'module': 'common.GraphMLP.graphmlp',
+    },
+    'icfnet': {
+        'seq_len': 27, 'batch_size': 16, 'lr': 2e-4, 'epochs': 200,
+        'ckpt': 'checkpoints/compare_icfnet_best.pt',
+        'log': 'log/compare_icfnet_log.txt',
+        'import_name': 'ICFNet', 'module': 'common.ICFNet.trans',
+    },
 }
 
 class AnimalDataset(Dataset):
@@ -259,6 +277,30 @@ def build_model(model_name, device):
             qkv_bias=True, qk_scale=None, drop_rate=0., attn_drop_rate=0.,
             drop_path_rate=0.2
         ).to(device)
+
+    elif model_name == 'dtf':
+        from common.DTF.dtf import Model
+        dtf_args = argparse.Namespace(
+            layers=3, channel=512, d_hid=1024, frames=seq_len,
+            n_joints=17, out_joints=17, in_chans=2
+        )
+        return Model(dtf_args).to(device)
+
+    elif model_name == 'graphmlp':
+        from common.GraphMLP.graphmlp import Model
+        gmlp_args = argparse.Namespace(
+            layers=11, channel=512, d_hid=1024, token_dim=256,
+            frames=seq_len, n_joints=17
+        )
+        return Model(gmlp_args).to(device)
+
+    elif model_name == 'icfnet':
+        from common.ICFNet.trans import ICFNet
+        icf_args = argparse.Namespace(
+            layers=3, channel=256, d_hid=512, frames=seq_len,
+            n_joints=17, out_joints=17
+        )
+        return ICFNet(icf_args).to(device)
 
     raise ValueError(f"Unknown model: {model_name}")
 
@@ -446,7 +488,7 @@ def train_model(model_name):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--model', type=str, default="mixste",
+    parser.add_argument('--model', type=str, default="icfnet",
                         choices=list(MODEL_CONFIGS.keys()),
                         help='Model to train')
     args = parser.parse_args()

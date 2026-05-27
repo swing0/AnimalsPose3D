@@ -78,6 +78,9 @@ MODEL_META = {
     'motionagformer':   {'seq_len': 27, 'ckpt': 'checkpoints/compare_motionagformer_best.pt'},
     'stcformer':        {'seq_len': 27, 'ckpt': 'checkpoints/compare_stcformer_best.pt'},
     'mixste':           {'seq_len': 27, 'ckpt': 'checkpoints/compare_mixste_best.pt'},
+    'dtf':              {'seq_len': 27, 'ckpt': 'checkpoints/compare_dtf_best.pt'},
+    'graphmlp':         {'seq_len': 27, 'ckpt': 'checkpoints/compare_graphmlp_best.pt'},
+    'icfnet':           {'seq_len': 27, 'ckpt': 'checkpoints/compare_icfnet_best.pt'},
 }
 
 
@@ -153,6 +156,30 @@ def _build_3d_model(model_name, seq_len, device):
             qkv_bias=True, qk_scale=None, drop_rate=0., attn_drop_rate=0.,
             drop_path_rate=0.2
         ).to(device)
+    elif model_name == 'dtf':
+        import argparse as _ap
+        from common.DTF.dtf import Model
+        dtf_args = _ap.Namespace(
+            layers=3, channel=512, d_hid=1024, frames=seq_len,
+            n_joints=17, out_joints=17, in_chans=2
+        )
+        return Model(dtf_args).to(device)
+    elif model_name == 'graphmlp':
+        import argparse as _ap
+        from common.GraphMLP.graphmlp import Model
+        gmlp_args = _ap.Namespace(
+            layers=11, channel=512, d_hid=1024, token_dim=256,
+            frames=seq_len, n_joints=17
+        )
+        return Model(gmlp_args).to(device)
+    elif model_name == 'icfnet':
+        import argparse as _ap
+        from common.ICFNet.trans import ICFNet
+        icf_args = _ap.Namespace(
+            layers=3, channel=256, d_hid=512, frames=seq_len,
+            n_joints=17, out_joints=17
+        )
+        return ICFNet(icf_args).to(device)
     raise ValueError(f"Unknown model: {model_name}")
 
 
