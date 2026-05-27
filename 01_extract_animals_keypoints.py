@@ -12,51 +12,17 @@ KEYPOINT_MAPPING = {
     "Right Eye": ["def_eye_joint.R"],
     "Nose": ["def_c_nose_joint"],
     "Neck": ["def_c_neck1_joint", "def_c_neck2_joint"],
-    "Left Shoulder": [
-        "def_frontLegUpr_joint.L",
-        "def_frontLegUprHalfTwist_joint.L",
-        "def_frontLegLwrHalfTwist_joint.L",
-    ],
-    "Left Elbow": [
-        "def_frontHorselink_joint.L",
-        "def_frontHorselinkHalfTwist_joint.L",
-        "def_frontLegLwr_joint.L",
-        "def_frontLegLwrHalfTwist_joint.L",
-    ],
+    "Left Shoulder": ["def_frontLegLwrHalfTwist_joint.L"],
+    "Left Elbow": ["def_frontHorselinkHalfTwist_joint.L"],
     "Left Front Paw": ["def_frontFoot_joint.L"],
-    "Right Shoulder": [
-        "def_frontLegUpr_joint.R",
-        "def_frontLegUprHalfTwist_joint.R",
-        "def_frontLegLwrHalfTwist_joint.R",
-    ],
-    "Right Elbow": [
-        "def_frontHorselink_joint.R",
-        "def_frontHorselinkHalfTwist_joint.R",
-        "def_frontLegLwr_joint.R",
-        "def_frontLegLwrHalfTwist_joint.R",
-    ],
+    "Right Shoulder": ["def_frontLegLwrHalfTwist_joint.R"],
+    "Right Elbow": ["def_frontHorselinkHalfTwist_joint.R"],
     "Right Front Paw": ["def_frontFoot_joint.R"],
-    "Left Hip": [
-        "def_rearLegUpr_joint.L",
-        "def_rearLegUprHalfTwist_joint.L",
-        "def_rearLegLwrHalfTwist_joint.L",
-    ],
-    "Left Knee": [
-        "def_rearHorselink_joint.L",
-        "def_rearLegLwr_joint.L",
-        "def_rearLegLwrHalfTwist_joint.L",
-    ],
+    "Left Hip": ["def_rearLegLwrHalfTwist_joint.L"],
+    "Left Knee": ["def_rearHorselink_joint.L"],
     "Left Back Paw": ["def_rearFoot_joint.L"],
-    "Right Hip": [
-        "def_rearLegUpr_joint.R",
-        "def_rearLegUprHalfTwist_joint.R",
-        "def_rearLegLwrHalfTwist_joint.R",
-    ],
-    "Right Knee": [
-        "def_rearHorselink_joint.R",
-        "def_rearLegLwr_joint.R",
-        "def_rearLegLwrHalfTwist_joint.R",
-    ],
+    "Right Hip": ["def_rearLegLwrHalfTwist_joint.R"],
+    "Right Knee": ["def_rearHorselink_joint.R"],
     "Right Back Paw": ["def_rearFoot_joint.R"]
 }
 
@@ -97,30 +63,15 @@ EXCLUDED_ACTIONS = {
     "socialcall", "treatment"
 }
 
-def extract_keypoints_from_frame(frame_data):
-    """
-    从单个帧数据中提取关键点坐标
-    如果KEYPOINT_MAPPING没有匹配上，使用KEYPOINT_MAPPING2作为备用方案
-    """
+def _try_extract_with_mapping(mapping, frame_data):
     keypoints = {}
-
-    for keypoint_name, joint_names in KEYPOINT_MAPPING.items():
+    all_found = True
+    for keypoint_name, joint_names in mapping.items():
         coordinates = None
-
-        # 首先尝试KEYPOINT_MAPPING
         for joint_name in joint_names:
             if joint_name in frame_data:
                 coordinates = frame_data[joint_name]
                 break
-
-        # 如果KEYPOINT_MAPPING没有匹配上，尝试KEYPOINT_MAPPING2
-        if coordinates is None and keypoint_name in KEYPOINT_MAPPING2:
-            joint_names2 = KEYPOINT_MAPPING2[keypoint_name]
-            for joint_name in joint_names2:
-                if joint_name in frame_data:
-                    coordinates = frame_data[joint_name]
-                    break
-
         if coordinates and len(coordinates) == 3:
             keypoints[keypoint_name] = {
                 'x': coordinates[0],
@@ -129,7 +80,18 @@ def extract_keypoints_from_frame(frame_data):
             }
         else:
             keypoints[keypoint_name] = {'x': None, 'y': None, 'z': None}
+            all_found = False
+    return keypoints, all_found
 
+
+def extract_keypoints_from_frame(frame_data):
+    """
+    从单个帧数据中提取关键点坐标
+    先用KEYPOINT_MAPPING整套提取，全过就用；否则用KEYPOINT_MAPPING2整套提取
+    """
+    keypoints, all_found = _try_extract_with_mapping(KEYPOINT_MAPPING, frame_data)
+    if not all_found:
+        keypoints, _ = _try_extract_with_mapping(KEYPOINT_MAPPING2, frame_data)
     return keypoints
 
 
