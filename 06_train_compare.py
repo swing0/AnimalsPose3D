@@ -20,11 +20,11 @@ SKELETON_EDGES = [
 ]
 
 MODEL_CONFIGS = {
-    'animalposeformer': {
+    'quadVideo3D': {
         'seq_len': 27, 'batch_size': 32, 'lr': 2e-4, 'epochs': 200,
-        'ckpt': 'checkpoints/compare_animalposeformer_best.pt',
-        'log': 'log/compare_animalposeformer_log.txt',
-        'import_name': 'AnimalPoseFormer', 'module': 'common.animal_poseformer',
+        'ckpt': 'checkpoints/compare_quadVideo3D_best.pt',
+        'log': 'log/compare_quadVideo3D_log.txt',
+        'import_name': 'QuadVideo3D', 'module': 'common.quadVideo3D',
     },
     'poseformer': {
         'seq_len': 27, 'batch_size': 32, 'lr': 2e-4, 'epochs': 200,
@@ -201,9 +201,9 @@ def build_model(model_name, device):
     cfg = MODEL_CONFIGS[model_name]
     seq_len = cfg['seq_len']
 
-    if model_name == 'animalposeformer':
-        from common.animal_poseformer import AnimalPoseFormer
-        return AnimalPoseFormer(
+    if model_name == 'quadVideo3D':
+        from common.quadVideo3D import QuadVideo3D
+        return QuadVideo3D(
             num_frame=seq_len, num_joints=17, in_chans=2,
             embed_dim_ratio=32, depth=4, num_heads=8, mlp_ratio=2.,
             qkv_bias=True, qk_scale=None, drop_rate=0., attn_drop_rate=0.,

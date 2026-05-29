@@ -36,7 +36,7 @@ EDGE_COLORS_2D = [
 ]
 
 MODEL_CFG = {
-    'animalposeformer': {'seq_len': 27, 'ckpt': 'checkpoints/animal_poseformer_best_model.pt'},
+    'QuadVideo3D': {'seq_len': 27, 'ckpt': 'checkpoints/quadVideo3D_best_model.pt'},
     'poseformer':        {'seq_len': 27, 'ckpt': 'checkpoints/compare_poseformer_best.pt'},
     'poseformerv2':      {'seq_len': 27, 'ckpt': 'checkpoints/compare_poseformerv2_best.pt'},
     'videopose3d':       {'seq_len': 27, 'ckpt': 'checkpoints/compare_videopose3d_best.pt'},
@@ -50,9 +50,9 @@ MODEL_CFG = {
 
 
 def build_model(model_name, seq_len, device):
-    if model_name == 'animalposeformer':
-        from common.animal_poseformer import AnimalPoseFormer
-        return AnimalPoseFormer(
+    if model_name == 'QuadVideo3D':
+        from common.quadVideo3d import QuadVideo3D
+        return QuadVideo3D(
             num_frame=seq_len, num_joints=17, in_chans=2,
             embed_dim_ratio=32, depth=4, num_heads=8, mlp_ratio=2.,
             qkv_bias=True, qk_scale=None, drop_rate=0., attn_drop_rate=0.,
@@ -238,7 +238,7 @@ def prepare_sequence(data_dict, sub, act, theta, seq_len):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--model', type=str, default='animalposeformer',
+    parser.add_argument('--model', type=str, default='quadVideo3D',
                         choices=list(MODEL_CFG.keys()))
     args = parser.parse_args()
 

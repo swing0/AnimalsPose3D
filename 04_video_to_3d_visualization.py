@@ -69,7 +69,7 @@ def enforce_per_frame_consistency(kps_3d, edges, symmetry_pairs):
     return kps
 
 MODEL_META = {
-    'animalposeformer': {'seq_len': 27, 'ckpt': 'checkpoints/animal_poseformer_best_model.pt'},
+    'quadVideo3D': {'seq_len': 27, 'ckpt': 'checkpoints/quadVideo3D_best_model.pt'},
     'poseformer':        {'seq_len': 27, 'ckpt': 'checkpoints/compare_poseformer_best.pt'},
     'poseformerv2':      {'seq_len': 27, 'ckpt': 'checkpoints/compare_poseformerv2_best.pt'},
     'videopose3d':       {'seq_len': 27, 'ckpt': 'checkpoints/compare_videopose3d_best.pt'},
@@ -85,9 +85,9 @@ MODEL_META = {
 
 
 def _build_3d_model(model_name, seq_len, device):
-    if model_name == 'animalposeformer':
-        from common.animal_poseformer import AnimalPoseFormer
-        return AnimalPoseFormer(
+    if model_name == 'quadVideo3D':
+        from common.quadVideo3D import QuadVideo3D
+        return QuadVideo3D(
             num_frame=seq_len, num_joints=17, in_chans=2,
             embed_dim_ratio=32, depth=4, num_heads=8, mlp_ratio=2.,
             qkv_bias=True, qk_scale=None, drop_rate=0., attn_drop_rate=0.,
@@ -185,7 +185,7 @@ def _build_3d_model(model_name, seq_len, device):
 
 class VideoTo3DVisualizer:
     def __init__(self, model_checkpoint, onnx_model_path,
-                 smooth_2d: bool = True, model_name: str = 'animalposeformer'):
+                 smooth_2d: bool = True, model_name: str = 'quadVideo3D'):
         print("🎯 初始化视频到3D可视化器...")
         self.detector = APT36KVideoPoseDetector(onnx_model_path)
         self.mapper = KeypointMapper()
@@ -555,7 +555,7 @@ def main():
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('--video', type=str, default='video/animals.mp4', help='Path to video')
-    parser.add_argument('--model', type=str, default='animalposeformer',
+    parser.add_argument('--model', type=str, default='quadVideo3D',
                         choices=list(MODEL_META.keys()), help='3D model name')
     args = parser.parse_args()
 

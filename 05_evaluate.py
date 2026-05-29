@@ -9,7 +9,7 @@ from collections import defaultdict
 
 sys.path.append('./common')
 from common.loss import mpjpe
-from common.animal_poseformer import AnimalPoseFormer
+from common.quadVideo3D import QuadVideo3D
 
 SKELETON_EDGES = [
     (0, 4), (4, 3), (3, 1), (3, 2), (4, 5), (5, 6), (6, 7),
@@ -140,7 +140,7 @@ def evaluate(checkpoint_path, data_path, train_data_path, device, output_txt=Non
     log = Logger()
 
     log.log("=" * 70)
-    log.log("AnimalPoseFormer 评估")
+    log.log("QuadVideo3D 评估")
     log.log(f"Checkpoint: {checkpoint_path}")
     log.log(f"数据集: {data_path}")
     log.log("=" * 70)
@@ -158,7 +158,7 @@ def evaluate(checkpoint_path, data_path, train_data_path, device, output_txt=Non
     subjects = sorted(data_dict.keys())
     log.log(f"物种: {len(subjects)}, 动作总数: {sum(len(v) for v in data_dict.values())}")
 
-    model = AnimalPoseFormer(
+    model = QuadVideo3D(
         num_frame=27, num_joints=17, in_chans=2,
         embed_dim_ratio=32, depth=4, num_heads=8, mlp_ratio=2.,
         qkv_bias=True, qk_scale=None, drop_rate=0., attn_drop_rate=0.,
@@ -329,9 +329,9 @@ if __name__ == '__main__':
     print(f"Device: {device}")
 
     evaluate(
-        checkpoint_path='checkpoints/animal_poseformer_best_model.pt',
+        checkpoint_path='checkpoints/quadVideo3D_best_model.pt',
         data_path='npz/real_npz/animals_val_3d.npz',
         train_data_path='npz/real_npz/animals_train_3d.npz',
         device=device,
-        output_txt='evaluation_results/animal_poseformer_best_model_eval.txt',
+        output_txt='evaluation_results/quadVideo3D_best_model_eval.txt',
     )

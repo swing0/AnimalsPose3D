@@ -1,5 +1,5 @@
-# 16_train_animal_poseformer.py
-# 增强版动物3D姿态估计训练 - 兼容 AnimalPoseFormer 模型
+# 16_train_quadVideo3D.py
+# 增强版动物3D姿态估计训练 - 兼容 QuadVideo3D 模型
 
 import os
 import sys
@@ -16,7 +16,7 @@ sys.path.append('./common')
 # 导入本地模块
 try:
     from common.loss import mpjpe, compute_bone_loss, compute_symmetry_loss
-    from common.animal_poseformer import AnimalPoseFormer
+    from common.quadVideo3D import QuadVideo3D
 except ImportError as e:
     print(f"❌ 导入错误: {e}")
     sys.exit(1)
@@ -173,15 +173,15 @@ class SyntheticAnimalDataset(Dataset):
 
 def train():
     print("=" * 70)
-    print("🚀 动物3D姿态估计 - AnimalPoseFormer 训练 (带增强位置编码)")
+    print("🚀 动物3D姿态估计 - QuadVideo3D 训练 (带增强位置编码)")
     print("策略: 使用预分割的训练/验证/测试集")
     print("=" * 70)
 
     import datetime
     start_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    with open("log/animal_poseformer_training_log.txt", "a", encoding="utf-8") as f:
+    with open("log/quadVideo3D_training_log.txt", "a", encoding="utf-8") as f:
         f.write(f"\n{'='*70}\n")
-        f.write(f"🚀 AnimalPoseFormer Training Started at {start_time}\n")
+        f.write(f"🚀 QuadVideo3D Training Started at {start_time}\n")
         f.write(f"{'='*70}\n")
 
     if not torch.cuda.is_available():
@@ -222,7 +222,7 @@ def train():
     val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=0)
     test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=0)
 
-    model = AnimalPoseFormer(
+    model = QuadVideo3D(
         num_frame=SEQ_LEN,
         num_joints=17,
         in_chans=2,
@@ -324,7 +324,7 @@ def train():
 
         print(log_msg)
 
-        with open("log/animal_poseformer_training_log.txt", "a", encoding="utf-8") as f:
+        with open("log/quadVideo3D_training_log.txt", "a", encoding="utf-8") as f:
             f.write(log_msg + "\n")
 
         scheduler.step(avg_val_pa_mpjpe)
@@ -332,9 +332,9 @@ def train():
         if avg_val_pa_mpjpe < best_val_loss:
             best_val_loss = avg_val_pa_mpjpe
             os.makedirs('checkpoints', exist_ok=True)
-            torch.save(model.state_dict(), 'checkpoints/animal_poseformer_best_model.pt')
+            torch.save(model.state_dict(), 'checkpoints/quadVideo3D_best_model.pt')
             print(f"💾 Saved Best Model ({best_val_loss:.2f}mm)")
-            with open("log/animal_poseformer_training_log.txt", "a", encoding="utf-8") as f:
+            with open("log/quadVideo3D_training_log.txt", "a", encoding="utf-8") as f:
                 f.write(f"💾 Saved Best Model ({best_val_loss:.2f}mm)\n")
 
     print("\n" + "=" * 70)
@@ -376,7 +376,7 @@ def train():
                 f"Test  PA-MPJPE: {avg_test_pa_mpjpe:6.1f}mm")
 
     print(test_msg)
-    with open("log/animal_poseformer_training_log.txt", "a", encoding="utf-8") as f:
+    with open("log/quadVideo3D_training_log.txt", "a", encoding="utf-8") as f:
         f.write(test_msg + "\n")
 
 if __name__ == '__main__':
