@@ -69,7 +69,7 @@ def enforce_per_frame_consistency(kps_3d, edges, symmetry_pairs):
     return kps
 
 MODEL_META = {
-    'quadVideo3D': {'seq_len': 27, 'ckpt': 'checkpoints/quadVideo3D_best_model.pt'},
+    'quadVideo3D': {'seq_len': 27, 'ckpt': 'checkpoints/quadVideo3D_base_best_model.pt'},
     'poseformer':        {'seq_len': 27, 'ckpt': 'checkpoints/compare_poseformer_best.pt'},
     'poseformerv2':      {'seq_len': 27, 'ckpt': 'checkpoints/compare_poseformerv2_best.pt'},
     'videopose3d':       {'seq_len': 27, 'ckpt': 'checkpoints/compare_videopose3d_best.pt'},
@@ -84,14 +84,17 @@ MODEL_META = {
 }
 
 
-def _build_3d_model(model_name, seq_len, device):
+def _build_3d_model(model_name, seq_len, device, use_hyper_head=False, use_morph_cross_attn=False):
     if model_name == 'quadVideo3D':
         from common.quadVideo3D import QuadVideo3D
         return QuadVideo3D(
             num_frame=seq_len, num_joints=17, in_chans=2,
             embed_dim_ratio=32, depth=4, num_heads=8, mlp_ratio=2.,
             qkv_bias=True, qk_scale=None, drop_rate=0., attn_drop_rate=0.,
-            drop_path_rate=0.2, use_lme=True,
+            drop_path_rate=0.2,
+            use_hyper_head=use_hyper_head,
+            use_morph_cross_attn=use_morph_cross_attn,
+            morph_dim=64,
             num_frame_kept=seq_len, num_coeff_kept=seq_len
         ).to(device)
     elif model_name == 'poseformer':
@@ -185,12 +188,15 @@ def _build_3d_model(model_name, seq_len, device):
 
 class VideoTo3DVisualizer:
     def __init__(self, model_checkpoint, onnx_model_path,
-                 smooth_2d: bool = True, model_name: str = 'quadVideo3D'):
+                 smooth_2d: bool = True, model_name: str = 'quadVideo3D',
+                 use_hyper_head: bool = False, use_morph_cross_attn: bool = False):
         print("🎯 初始化视频到3D可视化器...")
         self.detector = APT36KVideoPoseDetector(onnx_model_path)
         self.mapper = KeypointMapper()
         self.smooth_2d = smooth_2d
         self.model_name = model_name
+        self.use_hyper_head = use_hyper_head
+        self.use_morph_cross_attn = use_morph_cross_attn
         self.meta = MODEL_META[model_name]
         self.seq_len = self.meta['seq_len']
         
@@ -206,7 +212,10 @@ class VideoTo3DVisualizer:
     
     def load_3d_model(self, checkpoint_path):
         print(f"📥 加载3D模型 ({self.model_name}): {checkpoint_path}")
-        model = _build_3d_model(self.model_name, self.seq_len, self.device)
+        print(f"   使用配置: use_hyper_head={self.use_hyper_head}, use_morph_cross_attn={self.use_morph_cross_attn}")
+        model = _build_3d_model(self.model_name, self.seq_len, self.device,
+                                use_hyper_head=self.use_hyper_head,
+                                use_morph_cross_attn=self.use_morph_cross_attn)
 
         if not os.path.exists(checkpoint_path):
             print(f"❌ 模型文件不存在: {checkpoint_path}")
@@ -557,6 +566,10 @@ def main():
     parser.add_argument('--video', type=str, default='video/animals.mp4', help='Path to video')
     parser.add_argument('--model', type=str, default='quadVideo3D',
                         choices=list(MODEL_META.keys()), help='3D model name')
+    parser.add_argument('--use_hyper_head', action='store_true', default=False,
+                        help='Model uses HyperHead (hypernetwork-generated species-specific decoder)')
+    parser.add_argument('--use_morph_cross_attn', action='store_true', default=False,
+                        help='Model uses MorphCrossAttn (morphology cross-attention)')
     args = parser.parse_args()
 
     meta = MODEL_META[args.model]
@@ -571,7 +584,12 @@ def main():
                 args.video = os.path.join("video", vids[0])
                 print(f"Using found video: {args.video}")
 
-    viz = VideoTo3DVisualizer(checkpoint, onnx_path, model_name=args.model)
+    viz = VideoTo3DVisualizer(
+        checkpoint, onnx_path,
+        model_name=args.model,
+        use_hyper_head=args.use_hyper_head,
+        use_morph_cross_attn=args.use_morph_cross_attn,
+    )
     if viz.model_3d:
         viz.visualize_combined(args.video)
 

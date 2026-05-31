@@ -6,6 +6,7 @@ import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from collections import defaultdict
+import argparse
 
 sys.path.append('./common')
 from common.loss import mpjpe
@@ -51,27 +52,6 @@ def calculate_torso_lengths(data_dict):
                 lengths.extend(np.linalg.norm(root_neck_vec, axis=-1))
         torso_lengths[animal_name] = np.mean(lengths) if lengths else 1.0
     return torso_lengths
-
-
-def batch_rigid_align(pred, gt):
-    """刚性对齐: rotation + translation only. pred, gt: (B, J, 3)"""
-    mu_gt = gt.mean(dim=1, keepdim=True)
-    mu_pred = pred.mean(dim=1, keepdim=True)
-    gt_c = gt - mu_gt
-    pred_c = pred - mu_pred
-
-    H = torch.bmm(pred_c.transpose(1, 2), gt_c)
-    U, _, Vt = torch.svd(H)
-    V = Vt.transpose(1, 2)
-    R = torch.bmm(V, U.transpose(1, 2))
-
-    det = torch.det(R)
-    diag = torch.ones(pred.shape[0], 3, device=pred.device)
-    diag[:, 2] = torch.sign(det)
-    R = torch.bmm(torch.bmm(V, torch.diag_embed(diag)), U.transpose(1, 2))
-
-    aligned = torch.bmm(pred_c, R.transpose(1, 2)) + mu_gt
-    return aligned
 
 
 def batch_procrustes_np(pred_np, gt_np):
@@ -136,13 +116,15 @@ class Logger:
         print(f"\n[结果已保存至] {path}")
 
 
-def evaluate(checkpoint_path, data_path, train_data_path, device, output_txt=None):
+def evaluate(checkpoint_path, data_path, train_data_path, device,
+             use_hyper_head=False, use_morph_cross_attn=False, output_txt=None):
     log = Logger()
 
     log.log("=" * 70)
     log.log("QuadVideo3D 评估")
     log.log(f"Checkpoint: {checkpoint_path}")
     log.log(f"数据集: {data_path}")
+    log.log(f"配置: use_hyper_head={use_hyper_head}, use_morph_cross_attn={use_morph_cross_attn}")
     log.log("=" * 70)
 
     data_dict = np.load(data_path, allow_pickle=True)['positions_3d'].item()
@@ -162,7 +144,11 @@ def evaluate(checkpoint_path, data_path, train_data_path, device, output_txt=Non
         num_frame=27, num_joints=17, in_chans=2,
         embed_dim_ratio=32, depth=4, num_heads=8, mlp_ratio=2.,
         qkv_bias=True, qk_scale=None, drop_rate=0., attn_drop_rate=0.,
-        drop_path_rate=0.2, use_lme=True, num_frame_kept=27, num_coeff_kept=27
+        drop_path_rate=0.2,
+        use_hyper_head=use_hyper_head,
+        use_morph_cross_attn=use_morph_cross_attn,
+        morph_dim=64,
+        num_frame_kept=27, num_coeff_kept=27
     ).to(device)
 
     state_dict = torch.load(checkpoint_path, map_location=device)
@@ -324,14 +310,31 @@ def evaluate(checkpoint_path, data_path, train_data_path, device, output_txt=Non
 
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--checkpoint', type=str, default='checkpoints/quadVideo3D_best_model.pt',
+                        help='Path to checkpoint')
+    parser.add_argument('--data_path', type=str, default='npz/real_npz/animals_val_3d.npz',
+                        help='Path to evaluation data')
+    parser.add_argument('--train_data_path', type=str, default='npz/real_npz/animals_train_3d.npz',
+                        help='Path to training data (for species scales)')
+    parser.add_argument('--output', type=str, default='evaluation_results/quadVideo3D_eval.txt',
+                        help='Output file path')
+    parser.add_argument('--use_hyper_head', action='store_true', default=False,
+                        help='Model uses HyperHead (hypernetwork-generated species-specific decoder)')
+    parser.add_argument('--use_morph_cross_attn', action='store_true', default=False,
+                        help='Model uses MorphCrossAttn (morphology cross-attention)')
+    args = parser.parse_args()
+
     print("PyTorch version:", torch.__version__)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Device: {device}")
 
     evaluate(
-        checkpoint_path='checkpoints/quadVideo3D_best_model.pt',
-        data_path='npz/real_npz/animals_val_3d.npz',
-        train_data_path='npz/real_npz/animals_train_3d.npz',
+        checkpoint_path=args.checkpoint,
+        data_path=args.data_path,
+        train_data_path=args.train_data_path,
         device=device,
-        output_txt='evaluation_results/quadVideo3D_best_model_eval.txt',
+        use_hyper_head=args.use_hyper_head,
+        use_morph_cross_attn=args.use_morph_cross_attn,
+        output_txt=args.output,
     )

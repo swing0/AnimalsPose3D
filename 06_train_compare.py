@@ -207,7 +207,7 @@ def build_model(model_name, device):
             num_frame=seq_len, num_joints=17, in_chans=2,
             embed_dim_ratio=32, depth=4, num_heads=8, mlp_ratio=2.,
             qkv_bias=True, qk_scale=None, drop_rate=0., attn_drop_rate=0.,
-            drop_path_rate=0.2, use_lme=True,
+            drop_path_rate=0.2,
             num_frame_kept=seq_len, num_coeff_kept=seq_len
         ).to(device)
 
