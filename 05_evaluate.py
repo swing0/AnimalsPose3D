@@ -131,11 +131,14 @@ def evaluate(checkpoint_path, data_path, train_data_path, device,
     train_data = np.load(train_data_path, allow_pickle=True)['positions_3d'].item()
     species_scales = calculate_species_scales(train_data)
     torso_lengths = calculate_torso_lengths(train_data)
+    # 对于零样本物种（不在训练集中），从评估数据自身计算 scale
+    eval_species_scales = calculate_species_scales(data_dict)
+    eval_torso_lengths = calculate_torso_lengths(data_dict)
     for name in data_dict:
         if name not in species_scales:
-            species_scales[name] = 1.0
+            species_scales[name] = eval_species_scales.get(name, 1.0)
         if name not in torso_lengths:
-            torso_lengths[name] = 1.0
+            torso_lengths[name] = eval_torso_lengths.get(name, 1.0)
 
     subjects = sorted(data_dict.keys())
     log.log(f"物种: {len(subjects)}, 动作总数: {sum(len(v) for v in data_dict.values())}")

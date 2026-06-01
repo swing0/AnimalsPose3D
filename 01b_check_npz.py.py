@@ -244,7 +244,7 @@ def main():
     npz_file_path = r"npz\real_npz\data_3d_animals.npz"
     
     # 设置输出文件路径
-    output_file = "npz_analysis_output.txt"
+    output_file = r"npz\real_npz\npz_analysis_output.txt"
     
     print(f"正在检查NPZ文件并将结果保存到: {output_file}")
     
