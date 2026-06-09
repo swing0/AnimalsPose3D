@@ -36,7 +36,7 @@ EDGE_COLORS_2D = [
 ]
 
 MODEL_CFG = {
-    'QuadVideo3D': {'seq_len': 27, 'ckpt': 'checkpoints/quadVideo3D_best_model.pt'},
+    'quadVideo3D':       {'seq_len': 27, 'ckpt': 'checkpoints/quadVideo3D_cross_attn_hyper_head_best_model.pt'},
     'poseformer':        {'seq_len': 27, 'ckpt': 'checkpoints/compare_poseformer_best.pt'},
     'poseformerv2':      {'seq_len': 27, 'ckpt': 'checkpoints/compare_poseformerv2_best.pt'},
     'videopose3d':       {'seq_len': 27, 'ckpt': 'checkpoints/compare_videopose3d_best.pt'},
@@ -50,13 +50,14 @@ MODEL_CFG = {
 
 
 def build_model(model_name, seq_len, device):
-    if model_name == 'QuadVideo3D':
+    if model_name == 'quadVideo3D':
         from common.quadVideo3D import QuadVideo3D
         return QuadVideo3D(
             num_frame=seq_len, num_joints=17, in_chans=2,
             embed_dim_ratio=32, depth=4, num_heads=8, mlp_ratio=2.,
             qkv_bias=True, qk_scale=None, drop_rate=0., attn_drop_rate=0.,
             drop_path_rate=0.2,
+            use_hyper_head=True, use_morph_cross_attn=True, morph_dim=64,
             num_frame_kept=seq_len, num_coeff_kept=seq_len
         ).to(device)
     elif model_name == 'poseformer':

@@ -168,6 +168,7 @@ def evaluate(checkpoint_path, data_path, train_data_path, device,
     all_n_mpjpe = []
     all_per_joint_errors = []
     all_per_joint_pa_errors = []
+    all_per_joint_species = []
     all_bone_errors = []
     species_mpjpe = defaultdict(list)
     species_pa_mpjpe = defaultdict(list)
@@ -222,6 +223,7 @@ def evaluate(checkpoint_path, data_path, train_data_path, device,
 
                     per_joint_err = torch.norm(pred_rootrel - gt_rootrel, dim=-1).squeeze(0) * 1000
                     all_per_joint_errors.append(per_joint_err.numpy())
+                    all_per_joint_species.append(sub)
 
                     pred_np = pred_3d.cpu().numpy()[0]
                     gt_np = gt_3d_rot.cpu().numpy()[0]
@@ -252,11 +254,11 @@ def evaluate(checkpoint_path, data_path, train_data_path, device,
     log.log("=" * 70)
     log.log(f"  MPJPE:       {np.mean(all_mpjpe):.2f} mm")
     log.log(f"  PA-MPJPE:    {np.mean(all_pa_mpjpe):.2f} mm")
-    log.log(f"  N-MPJPE:     {np.mean(all_n_mpjpe):.2f}%")
+    log.log(f"  TN-MPJPE:    {np.mean(all_n_mpjpe):.2f}%")
 
     thresholds = [50, 100, 150, 200]
     log.log("\n" + "=" * 70)
-    log.log("2. 鲁棒性指标 — PCK / CPS")
+    log.log("2a. 鲁棒性指标 — PCK / CPS (固定阈值)")
     log.log("=" * 70)
     for th in thresholds:
         pck = np.mean(per_joint_errors < th) * 100
@@ -264,6 +266,19 @@ def evaluate(checkpoint_path, data_path, train_data_path, device,
         cps = np.mean(np.all(per_joint_errors < th, axis=1)) * 100
         pa_cps = np.mean(np.all(per_joint_pa_errors < th, axis=1)) * 100
         log.log(f"  阈值 {th:3d}mm | PCK: {pck:6.2f}% | PA-PCK: {pa_pck:6.2f}% | CPS: {cps:6.2f}% | PA-CPS: {pa_cps:6.2f}%")
+    
+    species_arr = np.array(all_per_joint_species)
+    rp_thresholds_pct = [3, 5, 10]
+    log.log("\n" + "=" * 70)
+    log.log("2b. RP-PCK / RP-CPS (躯干长度百分比阈值)")
+    log.log("=" * 70)
+    for pct in rp_thresholds_pct:
+        thresholds_mm = np.array([torso_lengths[s] * 1000 * pct / 100 for s in species_arr])
+        rp_pck = np.mean(per_joint_errors < thresholds_mm[:, np.newaxis]) * 100
+        rp_pa_pck = np.mean(per_joint_pa_errors < thresholds_mm[:, np.newaxis]) * 100
+        rp_cps = np.mean(np.all(per_joint_errors < thresholds_mm[:, np.newaxis], axis=1)) * 100
+        rp_pa_cps = np.mean(np.all(per_joint_pa_errors < thresholds_mm[:, np.newaxis], axis=1)) * 100
+        log.log(f"  阈值 {pct:2d}% | RP-PCK: {rp_pck:6.2f}% | RP-PA-PCK: {rp_pa_pck:6.2f}% | RP-CPS: {rp_cps:6.2f}% | RP-PA-CPS: {rp_pa_cps:6.2f}%")
 
     log.log("\n" + "=" * 70)
     log.log("3. 骨骼长度误差 (BLE)")
@@ -275,15 +290,26 @@ def evaluate(checkpoint_path, data_path, train_data_path, device,
     log.log("\n" + "=" * 70)
     log.log("4. 逐物种精度")
     log.log("=" * 70)
-    log.log(f"  {'物种':<25s} {'样本':>6s} {'MPJPE':>8s} {'PA-MPJPE':>10s} {'N-MPJPE':>10s} {'BLE':>8s}")
-    log.log(f"  {'-' * 69}")
+    log.log(f"  {'物种':<25s} {'样本':>6s} {'MPJPE':>8s} {'PA-MPJPE':>10s} {'TN-MPJPE':>10s} {'BLE':>8s} {'RP-PCK@3':>10s} {'RP-PA-PCK@3':>12s}")
+    log.log(f"  {'-' * 89}")
+    species_arr_full = np.array(all_per_joint_species)
     for sub in sorted(species_mpjpe.keys()):
         n = len(species_mpjpe[sub])
         mpjpe_s = np.mean(species_mpjpe[sub])
         pa_s = np.mean(species_pa_mpjpe[sub])
         n_s = np.mean(species_n_mpjpe[sub])
         ble_s = np.mean(species_bone_errors[sub])
-        log.log(f"  {sub:<25s} {n:>6d} {mpjpe_s:>7.1f}mm {pa_s:>9.1f}mm {n_s:>8.1f}%  {ble_s:>7.1f}mm")
+        
+        # Per-species RP-PCK@3
+        mask = species_arr_full == sub
+        torso_m = torso_lengths.get(sub, 1.0)
+        thresh_mm = torso_m * 1000 * 3 / 100
+        species_errs = per_joint_errors[mask]
+        species_pa_errs = per_joint_pa_errors[mask]
+        rp_pck_s = np.mean(species_errs < thresh_mm) * 100 if len(species_errs) > 0 else 0.0
+        rp_pa_pck_s = np.mean(species_pa_errs < thresh_mm) * 100 if len(species_pa_errs) > 0 else 0.0
+        
+        log.log(f"  {sub:<25s} {n:>6d} {mpjpe_s:>7.1f}mm {pa_s:>9.1f}mm {n_s:>8.1f}%  {ble_s:>7.1f}mm {rp_pck_s:>9.1f}% {rp_pa_pck_s:>11.1f}%")
 
     log.log("\n" + "=" * 70)
     log.log("5. Per-Joint Error (MPJPE per joint, mm)")

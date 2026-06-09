@@ -58,6 +58,11 @@ def create_interactive_vis(sequence_3d, subject, action):
     ax_2d = fig.add_subplot(122)
     plt.subplots_adjust(bottom=0.22, left=0.05, right=0.95)
 
+    # 设置白色背景
+    ax_3d.set_facecolor('white')
+    ax_2d.set_facecolor('white')
+    fig.patch.set_facecolor('white')
+
     state = {
         'theta_deg': 0,
         'noise': 0.0,
@@ -127,7 +132,14 @@ def create_interactive_vis(sequence_3d, subject, action):
         ax_2d.set_xlabel('u (= X after rotate)')
         ax_2d.set_ylabel('v (= Z after rotate)')
         ax_2d.set_title(f"2D Ortho Projection [X, Z]\n{subject} | {action} | Frame {frame_idx}/{total_frames}")
-        ax_2d.grid(True, alpha=0.3)
+        # 移除网格：注释或删除 grid 调用
+        # ax_2d.grid(True, alpha=0.3)
+
+        # 去除2D子图的边框（可选，使背景更干净）
+        ax_2d.spines['top'].set_visible(False)
+        ax_2d.spines['right'].set_visible(False)
+        ax_2d.spines['bottom'].set_visible(False)
+        ax_2d.spines['left'].set_visible(False)
 
         if frame_idx == 0 and not ax_3d.get_legend():
             ax_3d.legend(loc='upper left', prop={'size': 7})
@@ -195,8 +207,8 @@ def create_interactive_vis(sequence_3d, subject, action):
 
 if __name__ == '__main__':
     DATA_PATH = r'npz\real_npz\animals_test_3d.npz'
-    SUB = "Addax_Male"
-    ACT = "runtostandturnl"
+    SUB = "Wild_Boar_Male"
+    ACT = None
 
     try:
         seq, sub, act = load_animal_data(DATA_PATH, SUB, ACT)

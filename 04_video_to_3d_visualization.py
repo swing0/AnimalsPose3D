@@ -69,7 +69,7 @@ def enforce_per_frame_consistency(kps_3d, edges, symmetry_pairs):
     return kps
 
 MODEL_META = {
-    'quadVideo3D': {'seq_len': 27, 'ckpt': 'checkpoints/quadVideo3D_base_best_model.pt'},
+    'quadVideo3D': {'seq_len': 27, 'ckpt': 'checkpoints/quadVideo3D_cross_attn_hyper_head_best_model.pt'},
     'poseformer':        {'seq_len': 27, 'ckpt': 'checkpoints/compare_poseformer_best.pt'},
     'poseformerv2':      {'seq_len': 27, 'ckpt': 'checkpoints/compare_poseformerv2_best.pt'},
     'videopose3d':       {'seq_len': 27, 'ckpt': 'checkpoints/compare_videopose3d_best.pt'},
@@ -566,9 +566,9 @@ def main():
     parser.add_argument('--video', type=str, default='video/animals.mp4', help='Path to video')
     parser.add_argument('--model', type=str, default='quadVideo3D',
                         choices=list(MODEL_META.keys()), help='3D model name')
-    parser.add_argument('--use_hyper_head', action='store_true', default=False,
+    parser.add_argument('--use_hyper_head', action='store_true', default=True,
                         help='Model uses HyperHead (hypernetwork-generated species-specific decoder)')
-    parser.add_argument('--use_morph_cross_attn', action='store_true', default=False,
+    parser.add_argument('--use_morph_cross_attn', action='store_true', default=True,
                         help='Model uses MorphCrossAttn (morphology cross-attention)')
     args = parser.parse_args()
 
