@@ -57,3 +57,10 @@ In preparation, link forthcoming.
 ```bash
 # Evaluate QuadVideo3D
 python 05_evaluate.py --checkpoint checkpoints/model.pt
+```
+
+## References
+
+- [AniMo](https://github.com/WandererXX/AniMo) — Species-aware text-driven animal motion generation
+- [PoseFormerV2](https://github.com/QitaoZhao/PoseFormerV2) — Frequency-domain 3D human pose estimation
+- [VideoPose3D](https://github.com/facebookresearch/VideoPose3D) — Temporal convolution for 3D human pose estimation
